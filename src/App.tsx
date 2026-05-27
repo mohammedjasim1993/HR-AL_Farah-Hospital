@@ -51,7 +51,14 @@ import {
   Lock,
   Unlock,
   Clock,
-  Fingerprint
+  Fingerprint,
+  DollarSign,
+  Coins,
+  ShieldAlert,
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  CloudLightning
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -62,6 +69,8 @@ import {
   Tooltip as RechartsTooltip, 
   Legend as RechartsLegend 
 } from 'recharts';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 
 // قاموس الأيقونات الاحترافية للأقسام الـ 15 مع تنسيقات ألوان مخصصة ومصقولة
 export const DEPARTMENT_ICONS: Record<string, { icon: React.ComponentType<any>; color: string; bg: string; border: string }> = {
@@ -118,15 +127,465 @@ const CHART_COLORS = [
   '#f43f5e', // Sweet Rose
 ];
 
+// دالة مساعدة لترتيب الموظفين من أعلى منصب إداري/طبي إلى أدنى مرتبة بناءً على قائمة المسميات الوظيفية
+const sortEmployeesByRank = (empsList: Employee[], deptTitles: Record<string, string[]>) => {
+  return [...empsList].sort((a, b) => {
+    const titlesA = deptTitles[a.department] || [];
+    const titlesB = deptTitles[b.department] || [];
+    let indexA = titlesA.indexOf(a.title);
+    let indexB = titlesB.indexOf(b.title);
+    
+    // إذا لم يعثر على المسمى في قسمه، يبحث في باقي الأقسام
+    if (indexA === -1) {
+      for (const dept in deptTitles) {
+        const idx = deptTitles[dept].indexOf(a.title);
+        if (idx !== -1) {
+          indexA = idx + 20; // إعطاء عقوبة طفيفة ولكن الإبقاء على رتبته النسبية
+          break;
+        }
+      }
+    }
+    if (indexB === -1) {
+      for (const dept in deptTitles) {
+        const idx = deptTitles[dept].indexOf(b.title);
+        if (idx !== -1) {
+          indexB = idx + 20;
+          break;
+        }
+      }
+    }
+    
+    // في حال عدم العثور نهائياً
+    if (indexA === -1) indexA = 999;
+    if (indexB === -1) indexB = 999;
+    
+    // الترتيب تصاعدياً حسب المؤشر (المؤشر الأقل يعني رتبة أعلى مثل المدير قبل الموظف)
+    if (indexA !== indexB) {
+      return indexA - indexB;
+    }
+    // فرز ثانوي أبجدي بالاسم
+    return a.name.localeCompare(b.name, 'ar');
+  });
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [sortOption, setSortOption] = useState<string>('default');
   const [minSalary, setMinSalary] = useState<string>('');
   const [maxSalary, setMaxSalary] = useState<string>('');
   const [selectedDeptFilter, setSelectedDeptFilter] = useState<string>('all');
   const [currentPrintDept, setCurrentPrintDept] = useState<string>('all');
   const [signatureFilterDept, setSignatureFilterDept] = useState<string>('all');
   const [printDateString, setPrintDateString] = useState<string>('');
+
+  // ☁️ Cloud Sync Integration States & Methods
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  const performCloudSync = async () => {
+    try {
+      setSyncStatus('syncing');
+      
+      const payload = {
+        hospital_departments_v1: localStorage.getItem('hospital_departments_v1') || "[]",
+        hospital_department_titles_v1: localStorage.getItem('hospital_department_titles_v1') || "{}",
+        hospital_user_accounts_v1: localStorage.getItem('hospital_user_accounts_v1') || "[]",
+        alfarrah_employees_by_month_v3: localStorage.getItem('alfarrah_employees_by_month_v3') || "{}",
+        alfarrah_employees_v2: localStorage.getItem('alfarrah_employees_v2') || "[]",
+        alfarrah_released_months_v3: localStorage.getItem('alfarrah_released_months_v3') || "{}",
+        alfarrah_selected_month_v3: localStorage.getItem('alfarrah_selected_month_v3') || "2026-05",
+        alfarrah_chat_v2: localStorage.getItem('alfarrah_chat_v2') || "[]",
+      };
+
+      const hasPayloadData = payload.alfarrah_employees_by_month_v3 !== "{}" && payload.alfarrah_employees_by_month_v3 !== "[]";
+      if (!hasPayloadData) {
+        setSyncStatus('idle');
+        return; // Don't sync completely empty default template values to avoid overwriting backups
+      }
+
+      const res = await fetch('/api/cloud-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        setSyncStatus('success');
+        setLastSyncedAt(new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      } else {
+        setSyncStatus('error');
+      }
+    } catch (err) {
+      console.error("Cloud sync error:", err);
+      setSyncStatus('error');
+    }
+  };
+
+  // دالة تصدير كشف رواتب القسم كملف CSV يدعم ترميز إكسل والأسماء العربية بالكامل
+  const handleExportCSV = (deptName: string, empsList: Employee[]) => {
+    // العناوين باللغة العربية مع توافق كامل مع إكسل
+    const headers = [
+      'كود الموظف',
+      'اسم الموظف بالكامل',
+      'القسم الإداري/الطبي',
+      'المسمى الوظيفي والدرجة/المنصب',
+      'محددات الراتب الأساسية والعقود',
+      'إجمالي الإضافات والبدلات (د.ع)',
+      'إجمالي الاستقطاعات والغياب والعقوبات (د.ع)',
+      'الصافي المستحق النهائي (د.ع)',
+      'تفاصيل عملية الاحتساب الرياضية',
+      'الملاحظات والتعليمات'
+    ];
+
+    // بناء الأسطر لكل موظف
+    const rows = empsList.map(emp => {
+      const calc = calculateEmployeeSalaryAndDeductions(emp);
+      
+      // تفاصيل محددات القسم
+      let contractDetails = '';
+      if (emp.department === "الادارة العليا") {
+        contractDetails = `راتب أساسي: ${emp.baseSalary || 0}`;
+      } else if (emp.department === "قسم الصيدلية") {
+        contractDetails = `ص صباحي: ${emp.morningShiftValue || 0} (أيام: ${emp.morningShiftDays || 0}) | خفر: ${emp.nightShiftValue || 0} (أيام: ${emp.nightShiftDays || 0})`;
+      } else if (emp.department === "قسم العمليات") {
+        contractDetails = `يومي: ${emp.dayValue || 0} | كلي: ${emp.totalSalary || 0}`;
+      } else if (emp.department === "قسم النسائية والتوليد") {
+        contractDetails = `يوم كامل: ${emp.fullDayValue || 0} | نصف شفت: ${emp.halfShiftValue || 0}`;
+      } else if (emp.department === "قسم الكافتريا") {
+        contractDetails = `يومي: ${emp.dayValue || 0} (أيام: ${emp.workDaysCount || 0})`;
+      } else if (emp.department === "قسم الاطفال والخدج") {
+        contractDetails = `صباحي: ${emp.morningShiftValue || 0} | خفر: ${emp.nightShiftValue || 0}`;
+      } else if (emp.department === "قسم السونار") {
+        contractDetails = `استدعاء: ${emp.recallValue || 0}`;
+      } else if (emp.department === "قسم اطباء الخدج المقيمين") {
+        contractDetails = `كامل: ${emp.fullDayValue || 0} | مشترك: ${emp.jointDayValue || 0}`;
+      } else if (emp.department === "قسم المختبر ومصرف الدم") {
+        contractDetails = `صباحي: ${emp.morningShiftValue || 0} | خفر: ${emp.nightShiftValue || 0} | نصف شفت: ${emp.halfShiftValue9 || 0}`;
+      } else if (emp.department === "قسم الاطباء المقيمين") {
+        contractDetails = `ساعة/يوم: ${emp.dayValue12h || 0}`;
+      } else if (emp.department === "قسم التمريض والردهات والطواريء") {
+        contractDetails = `شفت: ${emp.shiftValue11 || 0}`;
+      } else if (emp.department === "قسم اطباء النسائية") {
+        contractDetails = `يومي: ${emp.dayValue || 0}`;
+      } else if (emp.department === "قسم الاشعة" || emp.department === "قسم الأشعة") {
+        contractDetails = `عقد قطعي: ${emp.radiologyTotalSum || 0}`;
+      } else if (emp.department === "قسم الامنية") {
+        contractDetails = `عقد قطعي: ${emp.securityTotalSum || 0}`;
+      } else if (emp.department === "قسم الاسعاف") {
+        contractDetails = `عقد قطعي: ${emp.ambulanceTotalSum || 0}`;
+      } else {
+        contractDetails = `أساسي: ${emp.baseSalary || emp.totalSalary || 0}`;
+      }
+
+      return [
+        emp.id,
+        emp.name,
+        emp.department,
+        emp.title,
+        contractDetails,
+        calc.totalAdditions,
+        calc.totalDeductions,
+        calc.finalSalary,
+        calc.calculationDetails,
+        emp.notes || ''
+      ];
+    });
+
+    const formatValue = (val: any) => {
+      if (val === null || val === undefined) return '';
+      let str = String(val).replace(/\r?\n|\r/g, ' '); 
+      if (str.includes(',') || str.includes('"') || str.includes(';') || str.includes('\t')) {
+        str = '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    };
+
+    const csvContent = [
+      headers.map(formatValue).join(','),
+      ...rows.map(row => row.map(formatValue).join(','))
+    ].join('\r\n');
+
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      const fileName = `كشف_رواتب_${deptName.replace(/\s+/g, '_')}_${selectedMonth}.csv`;
+      link.setAttribute('download', fileName);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  // تخزين محادثة مستشار الحسابات
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
+    const saved = localStorage.getItem('alfarrah_chat_v2');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'welcome',
+        sender: 'ai',
+        text: 'مرحباً بك في مستشفى الفرح الأهلي! أنا المستشار المحاسبي الذكي الخاص بك المدعوم بـ Gemini 3.5. لقد قمت بتحميل الهيكلية والمحددات الرواتب الحسابية المنفصلة للأقسام الـ 15 بنجاح. يمكنني مساعدتك الآن بمسير الرواتب والميزانيات، وتوضيح كيفية احتساب كشوفات الرواتب، وتطبيق خصومات الاستقطاعات والإضافات بيسر وسهولة. تفضل بطرح سؤالك المحاسبي!',
+        timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
+      }
+    ];
+  });
+
+  // 1. Dynamic Departments and Titles States
+  const [departments, setDepartments] = useState<string[]>(() => {
+    const saved = localStorage.getItem('hospital_departments_v1');
+    if (saved) return JSON.parse(saved);
+    return HOSPITAL_DEPARTMENTS;
+  });
+
+  const [departmentTitles, setDepartmentTitles] = useState<Record<string, string[]>>(() => {
+    const saved = localStorage.getItem('hospital_department_titles_v1');
+    if (saved) return JSON.parse(saved);
+    return DEPARTMENT_TITLES;
+  });
+
+  // 2. Security Login & Session States
+  const [userAccounts, setUserAccounts] = useState<any[]>(() => {
+    const saved = localStorage.getItem('hospital_user_accounts_v1');
+    if (saved) return JSON.parse(saved);
+    return [
+      {
+        username: 'admin',
+        password: 'admin123',
+        role: 'admin',
+         allowedDepartments: ['all']
+      },
+      {
+        username: 'viewer',
+        password: 'viewer123',
+        role: 'viewer',
+        allowedDepartments: ["قسم الصيدلية", "الادارة العليا", "قسم العمليات"]
+      }
+    ];
+  });
+
+  const [currentUser, setCurrentUser] = useState<any | null>(() => {
+    const saved = sessionStorage.getItem('hospital_current_session_v1');
+    if (saved) return JSON.parse(saved);
+    return null;
+  });
+
+  const [loginUsername, setLoginUsername] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [loginError, setLoginError] = useState<string>('');
+
+  // 3. Allowed Departments for Current User Account
+  const visibleDepartments = useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.allowedDepartments.includes('all')) {
+      return departments;
+    }
+    return departments.filter(d => currentUser.allowedDepartments.includes(d));
+  }, [currentUser, departments]);
+
+  const [editingDeptName, setEditingDeptName] = useState<string | null>(null);
+  const [newDeptInputName, setNewDeptInputName] = useState<string>('');
+
+  // dynamic department insert state
+  const [newDeptNameVal, setNewDeptNameVal] = useState<string>('');
+  const [newDeptInitialTitleVal, setNewDeptInitialTitleVal] = useState<string>('');
+  
+  // dynamic job title insert state
+  const [newTitleTargetDept, setNewTitleTargetDept] = useState<string>('');
+  const [newTitleVal, setNewTitleVal] = useState<string>('');
+
+  // Admin User Account creation states
+  const [newAccUser, setNewAccUser] = useState<string>('');
+  const [newAccPass, setNewAccPass] = useState<string>('');
+  const [newAccRole, setNewAccRole] = useState<'admin' | 'viewer'>('viewer');
+  const [newAccDepts, setNewAccDepts] = useState<string[]>([]);
+
+  // ==================== AUTH & MANAGEMENT SYSTEM HANDLERS ====================
+  const handleLogin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setLoginError('');
+    const user = userAccounts.find(
+      u => u.username.trim().toLowerCase() === loginUsername.trim().toLowerCase() && 
+           u.password === loginPassword
+    );
+    if (user) {
+      setCurrentUser(user);
+      sessionStorage.setItem('hospital_current_session_v1', JSON.stringify(user));
+      // Reset inputs
+      setLoginUsername('');
+      setLoginPassword('');
+    } else {
+      setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة. يرجى التحقق وإعادة المحاولة.');
+    }
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    sessionStorage.removeItem('hospital_current_session_v1');
+    setActiveTab('dashboard');
+  };
+
+  const handleRenameDepartment = (oldName: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === oldName) {
+      setEditingDeptName(null);
+      return;
+    }
+    
+    if (departments.map(d => d.toLowerCase()).includes(trimmed.toLowerCase())) {
+      alert("اسم القسم موجود بالفعل في النظام!");
+      return;
+    }
+
+    // Update departments list
+    const updatedDepts = departments.map(d => d === oldName ? trimmed : d);
+    setDepartments(updatedDepts);
+    localStorage.setItem('hospital_departments_v1', JSON.stringify(updatedDepts));
+
+    // Update titles map
+    const updatedTitles = { ...departmentTitles };
+    if (updatedTitles[oldName]) {
+      updatedTitles[trimmed] = updatedTitles[oldName];
+      delete updatedTitles[oldName];
+      setDepartmentTitles(updatedTitles);
+      localStorage.setItem('hospital_department_titles_v1', JSON.stringify(updatedTitles));
+    }
+
+    // Update employees mapping in all months
+    const updatedMonthsMap = { ...employeesByMonth };
+    Object.keys(updatedMonthsMap).forEach(month => {
+      updatedMonthsMap[month] = updatedMonthsMap[month].map(emp => {
+        if (emp.department === oldName) {
+          return { ...emp, department: trimmed };
+        }
+        return emp;
+      });
+    });
+    setEmployeesByMonth(updatedMonthsMap);
+    localStorage.setItem('alfarrah_employees_by_month_v3', JSON.stringify(updatedMonthsMap));
+
+    // Update current selections if they match renamed department
+    if (selectedDeptFilter === oldName) setSelectedDeptFilter(trimmed);
+    if (currentPrintDept === oldName) setCurrentPrintDept(trimmed);
+    if (signatureFilterDept === oldName) setSignatureFilterDept(trimmed);
+
+    setEditingDeptName(null);
+  };
+
+  const handleAddDepartment = (e: React.FormEvent) => {
+    e.preventDefault();
+    const dName = newDeptNameVal.trim();
+    const tName = newDeptInitialTitleVal.trim() || 'موظف رئيسي';
+    
+    if (!dName) {
+      alert("يرجى إدخال اسم القسم الجديد أولاً.");
+      return;
+    }
+
+    if (departments.includes(dName)) {
+      alert("هذا القسم موجود بالفعل في الشجرة التنظيمية!");
+      return;
+    }
+
+    // Add to departments
+    const updatedDepts = [...departments, dName];
+    setDepartments(updatedDepts);
+    localStorage.setItem('hospital_departments_v1', JSON.stringify(updatedDepts));
+
+    // Add to titles map
+    const updatedTitles = { ...departmentTitles, [dName]: [tName] };
+    setDepartmentTitles(updatedTitles);
+    localStorage.setItem('hospital_department_titles_v1', JSON.stringify(updatedTitles));
+
+    alert(`تمت إضافة القسم التنظيمي الجديد "${dName}" بنجاح مع منصب رئيسي "${tName}".`);
+    setNewDeptNameVal('');
+    setNewDeptInitialTitleVal('');
+  };
+
+  const handleAddNewTitleToDept = (e: React.FormEvent) => {
+    e.preventDefault();
+    const targetD = newTitleTargetDept || departments[0];
+    const tVal = newTitleVal.trim();
+
+    if (!targetD) {
+      alert("يرجى تحديد القسم المستهدف.");
+      return;
+    }
+    if (!tVal) {
+      alert("يرجى كتابة المسمى الوظيفي الجديد.");
+      return;
+    }
+
+    const currentTitles = departmentTitles[targetD] || [];
+    if (currentTitles.includes(tVal)) {
+      alert("هذا المسمى الوظيفي موجود بالفعل تحت ملف هذا القسم!");
+      return;
+    }
+
+    const updatedTitles = {
+      ...departmentTitles,
+      [targetD]: [...currentTitles, tVal]
+    };
+    setDepartmentTitles(updatedTitles);
+    localStorage.setItem('hospital_department_titles_v1', JSON.stringify(updatedTitles));
+
+    alert(`تم إدراج المسمى الوظيفي الجديد "${tVal}" بنجاح تحت قسم "${targetD}".`);
+    setNewTitleVal('');
+  };
+
+  const handleCreateUserAccount = (e: React.FormEvent) => {
+    e.preventDefault();
+    const user = newAccUser.trim();
+    const pass = newAccPass.trim();
+    const role = newAccRole;
+    
+    if (!user || !pass) {
+      alert("يرجى ملء جميع حقول حساب المستخدم الفني الجديد.");
+      return;
+    }
+
+    if (userAccounts.some(u => u.username.toLowerCase() === user.toLowerCase())) {
+      alert("اسم المستخدم هذا محجوز لحساب آخر بالفعل!");
+      return;
+    }
+
+    const assignedDepts = role === 'admin' ? ['all'] : (newAccDepts.length > 0 ? newAccDepts : [departments[0]]);
+    const newAcc = {
+      username: user,
+      password: pass,
+      role,
+      allowedDepartments: assignedDepts
+    };
+
+    const updatedAccs = [...userAccounts, newAcc];
+    setUserAccounts(updatedAccs);
+    localStorage.setItem('hospital_user_accounts_v1', JSON.stringify(updatedAccs));
+
+    alert(`تم إنشاء الحساب التعاوني "${user}" بنجاح ضمن فئة ${role === 'admin' ? 'المدراء' : 'المراقبين المقيدين'}.`);
+    // Reset inputs
+    setNewAccUser('');
+    setNewAccPass('');
+    setNewAccDepts([]);
+  };
+
+  const handleDeleteUserAccount = (username: string) => {
+    if (username.toLowerCase() === 'admin') {
+      alert("لا يمكن حذف حساب المسؤول الرئيسي الفائق للنظام!");
+      return;
+    }
+    if (window.confirm(`هل أنت متأكد من حذف حساب المستخدم "${username}" نهائياً من الصلاحيات؟`)) {
+      const updated = userAccounts.filter(u => u.username !== username);
+      setUserAccounts(updated);
+      localStorage.setItem('hospital_user_accounts_v1', JSON.stringify(updated));
+    }
+  };
 
   // تهيئة وتخزين حالة الدورة الشهرية
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
@@ -186,6 +645,71 @@ export default function App() {
     localStorage.setItem('alfarrah_released_months_v3', JSON.stringify(releasedMonths));
   }, [releasedMonths]);
 
+  // تأثير المزامنة الخلفية التلقائية عند رصد أي تعديل في البيانات (ديلاي 4 ثوانٍ لعدم تكرار الطلبات)
+  useEffect(() => {
+    if (!employees || employees.length === 0) return;
+
+    const timer = setTimeout(() => {
+      performCloudSync();
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [employees, departments, departmentTitles, userAccounts, releasedMonths, selectedMonth, chatMessages]);
+
+  // تأثير التحقق التلقائي واستعادة النسخة السحابية الشاملة لمنع ضياع البيانات في حال فقدان التخزين المحلي للمتصفح
+  useEffect(() => {
+    const autoRestoreFromCloud = async () => {
+      try {
+        const hasLocal = localStorage.getItem('alfarrah_employees_by_month_v3');
+        if (hasLocal) {
+          // جلب وقت آخر مزامنة فقط لعرضه للمستخدم إذا كانت البيانات موجودة محلياً
+          const checkRes = await fetch('/api/cloud-sync');
+          if (checkRes.ok) {
+            const resData = await checkRes.json();
+            if (resData.status === 'ok' && resData.updatedAt) {
+              const dateObj = new Date(resData.updatedAt);
+              setLastSyncedAt(dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+              setSyncStatus('success');
+            }
+          }
+          return;
+        }
+
+        // مستودع التخزين المحلي فارغ! جلب النسخة السحابية فوراً لحماية الجلسة والبيانات
+        setSyncStatus('syncing');
+        const res = await fetch('/api/cloud-sync');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'ok' && data.payload) {
+            console.log("لقد تم رصد جدول فارغ محلياً. جاري الاستعادة الذاتية من النسخة السحابية...");
+            const p = data.payload;
+            
+            if (p.hospital_departments_v1) localStorage.setItem('hospital_departments_v1', p.hospital_departments_v1);
+            if (p.hospital_department_titles_v1) localStorage.setItem('hospital_department_titles_v1', p.hospital_department_titles_v1);
+            if (p.hospital_user_accounts_v1) localStorage.setItem('hospital_user_accounts_v1', p.hospital_user_accounts_v1);
+            if (p.alfarrah_employees_by_month_v3) localStorage.setItem('alfarrah_employees_by_month_v3', p.alfarrah_employees_by_month_v3);
+            if (p.alfarrah_employees_v2) localStorage.setItem('alfarrah_employees_v2', p.alfarrah_employees_v2);
+            if (p.alfarrah_released_months_v3) localStorage.setItem('alfarrah_released_months_v3', p.alfarrah_released_months_v3);
+            if (p.alfarrah_selected_month_v3) localStorage.setItem('alfarrah_selected_month_v3', p.alfarrah_selected_month_v3);
+            if (p.alfarrah_chat_v2) localStorage.setItem('alfarrah_chat_v2', p.alfarrah_chat_v2);
+
+            // تفعيل التحديث المباشر للمتصفح لتثبيت الاسترداد السحابي
+            window.location.reload();
+          } else {
+            setSyncStatus('idle');
+          }
+        } else {
+          setSyncStatus('idle');
+        }
+      } catch (err) {
+        console.error("Auto restore failed:", err);
+        setSyncStatus('error');
+      }
+    };
+
+    autoRestoreFromCloud();
+  }, []);
+
   // دالة تغيير الدورة الشهرية بأمان وحفظ البيانات السابقة ونقل الكوادر نظيفة
   const handleMonthChange = (newMonth: string) => {
     const curEmps = [...employees];
@@ -221,19 +745,6 @@ export default function App() {
       return prev;
     });
   };
-
-  // تخزين محادثة مستشار الحسابات
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(() => {
-    const saved = localStorage.getItem('alfarrah_chat_v2');
-    return saved ? JSON.parse(saved) : [
-      {
-        id: 'welcome',
-        sender: 'ai',
-        text: 'مرحباً بك في مستشفى الفرح الأهلي! أنا المستشار المحاسبي الذكي الخاص بك المدعوم بـ Gemini 3.5. لقد قمت بتحميل الهيكلية والمحددات الرواتب الحسابية المنفصلة للأقسام الـ 15 بنجاح. يمكنني مساعدتك الآن بمسير الرواتب والميزانيات، وتوضيح كيفية احتساب كشوفات الرواتب، وتطبيق خصومات الاستقطاعات والإضافات بيسر وسهولة. تفضل بطرح سؤالك المحاسبي!',
-        timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
-      }
-    ];
-  });
   const [chatInput, setChatInput] = useState<string>('');
   const [isChatLoading, setIsChatLoading] = useState<boolean>(false);
 
@@ -363,21 +874,38 @@ export default function App() {
   const [isExportingPDF, setIsExportingPDF] = useState<boolean>(false);
 
   // دالة المساعدة لتوليد وتصدير ملف الـ PDF الاحترافي والمنظم للأقسام باستخدام مكتبتي html2canvas و jsPDF
+  // وتطبيق تهيئة التصفح والمحاذاة التلقائية لتفادي مشكلة الصفحة البيضاء الناتجة عن تصفح الصفحة للأسفل
   const handleExportPDF = async () => {
     const element = document.getElementById('printable-area-mockup');
     if (!element) return;
 
     setIsExportingPDF(true);
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const { jsPDF } = await import('jspdf');
+    const origScrollY = window.scrollY;
 
-      // تهيئة خيارات التحويل لضمان أعلى جودة ودقة وحفظ الخطوط والتنسيقات والصور
+    try {
+      // التمرير المؤقت للأعلى لتفادي الإزاحة العمودية الحادة التي تنتج صفحة فارغة أولى هامة
+      window.scrollTo(0, 0);
+      await new Promise(resolve => setTimeout(resolve, 150)); // انتظار لتزامن المتصفح
+
       const canvas = await html2canvas(element, {
         scale: 2, // دقة مخرجات عالية وممتازة تجعل النصوص حادة وسهلة القراءة عند الطباعة
         useCORS: true,
         backgroundColor: '#ffffff',
-        logging: false
+        logging: false,
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+        ignoreElements: (element) => {
+          // جلب أي عناصر غير مرغوب فيها أو فوقية من خارج نطاق التقرير لتفادي تداخلها مع محتويات الطباعة
+          const isFloatingBadge = element.id?.includes('studio') || 
+                                  element.className?.includes('badge') || 
+                                  element.className?.includes('watermark') ||
+                                  element.id?.includes('feedback');
+          return isFloatingBadge;
+        }
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
@@ -389,7 +917,7 @@ export default function App() {
       });
 
       const imgWidth = 210; // عرض الصفحة A4 بالملم
-      const pageHeight = 297; // طول الصفحة A4 بالملم
+      const pageHeight = 295; // طول الصفحة A4 بالملم (تقليص طفيف لتفادي الهوامش الزائدة)
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
       let heightLeft = imgHeight;
@@ -399,9 +927,9 @@ export default function App() {
       pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
 
-      // لو كانت البيانات أطول من صفحة واحدة، نقوم بالتكرار لإضافة مساحات إضافية بمرونة كاملة
+      // لو كانت البيانات أطول من صفحة واحدة، نقوم بالتكرار لإضافة مساحات إضافية بمرونة كاملة وبدون ثغرات
       while (heightLeft > 0) {
-        position -= pageHeight; // إزاحة للأعلى بمقدار الارتفاع الكامل لصفحة A4
+        position -= pageHeight; 
         pdf.addPage();
         pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
@@ -412,6 +940,8 @@ export default function App() {
       console.error("PDF generation failed:", error);
       alert("حدث فشل أثناء محاولة توليد ملف الـ PDF. يرجى المحاولة مرة ثانية.");
     } finally {
+      // إرجاع حالة التصفح لموقعها الطبيعي
+      window.scrollTo(0, origScrollY);
       setIsExportingPDF(false);
     }
   };
@@ -444,7 +974,7 @@ export default function App() {
     let grandNetSalary = 0;
     let grandStaffCount = 0;
 
-    const report = HOSPITAL_DEPARTMENTS.map(dept => {
+    const report = visibleDepartments.map(dept => {
       const deptEmps = employees.filter(e => e.department === dept);
       let gross = 0;
       let deductions = 0;
@@ -487,9 +1017,9 @@ export default function App() {
     };
   }, [employees, payrolls]);
 
-  // تصفية الكارد الكلي للبحث العام ونطاق الراتب المتقدم
+  // تصفية وترتيب الكارد الكلي للبحث العام ونطاق الراتب المتقدم
   const filteredEmployeesBySearch = useMemo(() => {
-    return employees.filter(emp => {
+    const list = employees.filter(emp => {
       // 1. تصفية النص (البحث العام)
       const matchSearch = 
         emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -510,7 +1040,28 @@ export default function App() {
 
       return true;
     });
-  }, [employees, searchTerm, payrolls, minSalary, maxSalary]);
+
+    // 3. تطبيق الفرز والترتيب المنسق للرواتب أو الأسماء بالاتجاهين
+    if (sortOption === 'name-asc') {
+      return [...list].sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+    } else if (sortOption === 'name-desc') {
+      return [...list].sort((a, b) => b.name.localeCompare(a.name, 'ar'));
+    } else if (sortOption === 'salary-desc') {
+      return [...list].sort((a, b) => {
+        const salA = payrolls.find(p => p.employeeId === a.id)?.finalSalary || 0;
+        const salB = payrolls.find(p => p.employeeId === b.id)?.finalSalary || 0;
+        return salB - salA;
+      });
+    } else if (sortOption === 'salary-asc') {
+      return [...list].sort((a, b) => {
+        const salA = payrolls.find(p => p.employeeId === a.id)?.finalSalary || 0;
+        const salB = payrolls.find(p => p.employeeId === b.id)?.finalSalary || 0;
+        return salA - salB;
+      });
+    }
+
+    return list;
+  }, [employees, searchTerm, payrolls, minSalary, maxSalary, sortOption]);
 
   // إعادة تعيين الشجرة والمستشار
   const handleResetToDefault = () => {
@@ -889,6 +1440,132 @@ export default function App() {
     );
   };
 
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 sm:p-6 font-sans select-none text-right" dir="rtl">
+        <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden p-6 sm:p-8 space-y-6 relative">
+          
+          {/* Logo brand */}
+          <div className="flex flex-col items-center text-center gap-3">
+            <div className="bg-teal-50/70 p-3 rounded-full border border-teal-100/80 shadow-inner">
+              <svg viewBox="0 0 200 200" className="w-24 h-24 shrink-0 drop-shadow-md select-none" id="hospital-brand-logo-login">
+                <circle cx="100" cy="100" r="94" fill="#149cb7" stroke="#ffffff" strokeWidth="2" />
+                <circle cx="100" cy="100" r="91" fill="none" stroke="#ffffff" strokeWidth="1" />
+                <circle cx="100" cy="100" r="62" fill="#ffffff" stroke="#149cb7" strokeWidth="1" />
+                
+                <g transform="translate(68, 70) scale(0.33)" fill="#cda13c">
+                  <path d="M42,75 C42,70 41,60 44,52 C46,45 42,40 37,42 C30,45 28,52 23,45 C18,38 23,30 31,34 C36,36 39,26 31,19 C24,12 17,20 12,28 C8,34 5,20 15,10 C25,0 38,12 40,2 C42,-8 48,-8 50,2 C52,12 65,0 75,10 C85,20 82,34 78,28 C73,20 66,12 59,19 C51,26 54,36 59,34 C67,30 72,38 67,45 C62,52 60,45 53,42 C48,40 44,45 46,52 C49,60 48,70 48,75 L42,75 Z" />
+                  <circle cx="34" cy="30" r="3.5" />
+                  <circle cx="45" cy="18" r="4" />
+                  <circle cx="56" cy="30" r="3.5" />
+                </g>
+
+                <path d="M 68 112 L 80 112 L 84 96 L 90 125 L 95 86 L 102 119 L 107 108 L 111 112 L 128 112" fill="none" stroke="#cda13c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+                <g transform="translate(101, 88)">
+                  <text x="0" y="0" className="font-sans font-extrabold text-[8px]" fill="#cda13c">AL FARAH</text>
+                  <text x="0" y="8" className="font-sans font-bold text-[7px]" fill="#cda13c">PRIVATE</text>
+                  <text x="0" y="16" className="font-sans font-bold text-[7.5px]" fill="#cda13c">HOSPITAL</text>
+                  <line x1="0" y1="20" x2="28" y2="20" stroke="#cda13c" strokeWidth="0.8" />
+                </g>
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-sans font-black text-slate-850">مستشفى الفرح الأهلي</h2>
+              <span className="text-[10px] uppercase font-black text-teal-800 tracking-wider block font-sans mt-0.5">بوابة الدخول الإلكترونية الموحدة لكشوفات الرواتب</span>
+            </div>
+          </div>
+
+          {/* Login Form */}
+          <form onSubmit={handleLogin} className="space-y-4">
+            {loginError && (
+              <div className="bg-red-50 border border-red-150 p-3.5 rounded-2xl flex items-center gap-2.5 text-xs text-red-700 animate-pulse">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <p className="font-black leading-relaxed">{loginError}</p>
+              </div>
+            )}
+            
+            <div className="space-y-1">
+              <label className="text-xs font-black text-gray-500 block">اسم المستخدم المالي:</label>
+              <div className="bg-slate-50 px-3.5 py-3 rounded-2xl border border-gray-200 flex items-center gap-2">
+                <Users className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
+                <input
+                  type="text"
+                  required
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder="أدخل اسم الحساب..."
+                  className="w-full text-xs font-bold bg-transparent outline-none text-right text-gray-850"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-black text-gray-500 block">كلمة المرور الأمنية:</label>
+              <div className="bg-slate-50 px-3.5 py-3 rounded-2xl border border-gray-200 flex items-center gap-2">
+                <Lock className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full text-xs font-bold bg-transparent outline-none text-right text-gray-850 font-sans"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-teal-800 hover:bg-teal-900 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+            >
+              <Fingerprint className="w-4 h-4 text-white" />
+              تأكيد التحقق والدخول الآمن للأنظمة 🔒
+            </button>
+          </form>
+
+          {/* Quick Pre-fill / Testing Preset Credentials Card */}
+          <div className="bg-teal-50/50 border border-teal-100 p-4 rounded-2.5xl space-y-2.5 text-right">
+            <span className="text-[10px] text-teal-900 font-black block">💡 حسابات تجريبية سريعة ومبسطة للصلاحيات:</span>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginUsername('admin');
+                  setLoginPassword('admin123');
+                  setLoginError('');
+                }}
+                className="p-2.5 bg-white border border-teal-200 hover:border-teal-400 text-teal-950 font-black text-[10px] rounded-xl text-center shadow-xs transition-with hover:scale-[1.02] cursor-pointer"
+              >
+                💼 حساب الإدارة (Admin)
+                <span className="block font-mono text-[8px] text-teal-650 mt-1">user: admin | pass: admin123</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLoginUsername('viewer');
+                  setLoginPassword('viewer123');
+                  setLoginError('');
+                }}
+                className="p-2.5 bg-white border border-teal-200 hover:border-teal-400 text-teal-950 font-black text-[10px] rounded-xl text-center shadow-xs transition-with hover:scale-[1.02] cursor-pointer"
+              >
+                👁️ حساب التدقيق (Viewer)
+                <span className="block font-sans font-bold text-[8px] text-violet-600 mt-1 font-mono">user: viewer | pass: viewer123</span>
+              </button>
+            </div>
+            <p className="text-[9px] text-gray-400 leading-relaxed font-semibold">
+              * حساب الإدارة لديه كل الصلاحيات لإضافة الأقسام والوظائف والموظفين والتوقيف والتعديل الكامل.
+              <br />
+              * حساب التدقيق مقيد لمشاهدة الرواتب فقط وقابل للتهيئة للأقسام المحددة له دون إمكانيات تعديل.
+            </p>
+          </div>
+
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans select-none text-right" dir="rtl" id="hospital-main-page">
       
@@ -959,6 +1636,67 @@ export default function App() {
               <h1 className="text-2xl font-sans font-black text-gray-900 tracking-tight">مستشفى الفرح الأهلي</h1>
               <span className="text-[10px] uppercase font-bold text-teal-800 tracking-widest block font-sans mt-1">نظام تدقيق وإدارة كشوفات الرواتب الإلكتروني الموحد</span>
             </div>
+          </div>
+          
+          {/* User Session and Logout Panel */}
+          <div className="flex flex-wrap items-center justify-center gap-3 bg-teal-50/50 px-4 py-2 rounded-2xl border border-teal-100 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-xs font-black text-teal-950">
+                المستخدم الحالي: <span className="text-teal-850 font-sans">{currentUser?.username}</span>
+              </span>
+              <span className="text-[10px] bg-teal-850 text-white font-black px-2 py-0.5 rounded-lg block">
+                {currentUser?.role === 'admin' ? 'مدير كامل الصلاحيات 👑' : 'مراقب حسابات مقيد 👁️'}
+              </span>
+            </div>
+            
+            <div className="w-px h-4 bg-teal-200"></div>
+
+            {/* Cloud Sync Status Component */}
+            <div className="flex items-center gap-1.5 px-2 py-1 bg-white/70 rounded-xl border border-teal-100 shadow-2xs">
+              {syncStatus === 'syncing' ? (
+                <div className="flex items-center gap-1 text-[10px] text-amber-600 font-bold">
+                  <CloudLightning className="w-3 h-3 animate-pulse text-amber-500" />
+                  <span>جاري المزامنة السحابية...</span>
+                </div>
+              ) : syncStatus === 'success' ? (
+                <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-bold">
+                  <Cloud className="w-3 h-3 text-emerald-500 fill-emerald-100" />
+                  <span>مزامنة سحابية آمنة 🟢</span>
+                  {lastSyncedAt && <span className="text-[8px] text-gray-400 font-mono font-normal">({lastSyncedAt})</span>}
+                </div>
+              ) : syncStatus === 'error' ? (
+                <div className="flex items-center gap-1 text-[10px] text-red-600 font-bold">
+                  <CloudOff className="w-3 h-3 text-red-500" />
+                  <span>خطأ بالمزامنة السحابية ⚠️</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 text-[10px] text-slate-500 font-bold">
+                  <Cloud className="w-3 h-3 text-slate-400" />
+                  <span>مزامنة غير نشطة ⛅</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={performCloudSync}
+                disabled={syncStatus === 'syncing'}
+                className="p-1 hover:bg-teal-50 rounded-lg transition-all focus:outline-none disabled:opacity-50 text-slate-500 hover:text-teal-600 cursor-pointer"
+                title="اضغط لتنفيذ المزامنة الآن سحابياً وبشكل فوري"
+              >
+                <RefreshCw className={`w-2.5 h-2.5 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            <div className="w-px h-4 bg-teal-200"></div>
+            <button
+              onClick={handleLogout}
+              className="text-[10px] text-red-600 hover:text-white hover:bg-red-600 px-2.5 py-1 rounded-lg border border-red-200 hover:border-red-600 transition-all cursor-pointer font-black block"
+            >
+              تسجيل الخروج المالي 🚪
+            </button>
           </div>
 
           {/* Tab buttons */}
@@ -1162,6 +1900,8 @@ export default function App() {
             payrolls={payrolls} 
             activeTab={activeTab} 
             setActiveTab={setActiveTab} 
+            employeesByMonth={employeesByMonth}
+            selectedMonth={selectedMonth}
           />
         )}
 
@@ -1224,7 +1964,7 @@ export default function App() {
                     </span>
                   </button>
 
-                  {HOSPITAL_DEPARTMENTS.map(dept => {
+                  {visibleDepartments.map(dept => {
                     const deptEmpsCount = employees.filter(e => e.department === dept).length;
                     const info = DEPARTMENT_ICONS[dept] || { icon: Building, color: "text-teal-700", bg: "bg-teal-50", border: "border-teal-200" };
                     const IconComp = info.icon;
@@ -1256,6 +1996,44 @@ export default function App() {
                     );
                   })}
                 </div>
+
+                {/* Highly Crafted Action Bar for Selected Department Export */}
+                <div className="mt-4 pt-4 border-t border-dashed border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs bg-slate-50 p-3.5 rounded-2xl">
+                  <div className="space-y-1 text-right">
+                    <div className="flex items-center gap-1.5 flex-row-reverse md:flex-row justify-end md:justify-start">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-550 animate-pulse"></span>
+                      <span className="font-sans font-black text-gray-800 text-xs">
+                        {selectedDeptFilter === 'all' ? (
+                          <span>تركيز الفلترة النشطة: كافة كادر وأقسام المستشفى الـ 15 🏥</span>
+                        ) : (
+                          <span>تركيز الفلترة النشطة: {selectedDeptFilter} 🏷️</span>
+                        )}
+                      </span>
+                    </div>
+                    <p className="text-gray-450 text-[10px] sm:text-[11px] font-bold">
+                      {selectedDeptFilter === 'all' ? (
+                        <span>يمكنك هنا تصدير جدول الأجور والرواتب الكامل والشامل لجميع موظفي المستشفى البالغ عددهم ({employees.length}) موظفاً بصيغة ملف حسابي يدعم محترفي الإدارة المالية.</span>
+                      ) : (
+                        <span>يمكنك بنقرة واحدة استخراج وتنزيل كشف رواتب الكادر المسجل في قسم {selectedDeptFilter} والبالغ عددهم ({employees.filter(e => e.department === selectedDeptFilter).length}) موظفاً للمطابقة السريعة.</span>
+                      )}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      if (selectedDeptFilter === 'all') {
+                        handleExportCSV('كافة_الأقسام', employees);
+                      } else {
+                        handleExportCSV(selectedDeptFilter, employees.filter(e => e.department === selectedDeptFilter));
+                      }
+                    }}
+                    className="self-stretch md:self-auto px-4.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[11px] rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-sm shrink-0 border border-emerald-700 hover:scale-[1.01] hover:shadow-md cursor-pointer select-none"
+                    title="تصدير جدول الرواتب كاملاً بصيغة CSV ملائمة لبرنامج Excel"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-100 shrink-0" />
+                    <span>تصدير كشف الرواتب المفلتر (Excel-CSV) 📊</span>
+                  </button>
+                </div>
               </div>
 
               {/* Printable Area / Left Worksheets Flow Layout - Spans Full Width */}
@@ -1266,7 +2044,7 @@ export default function App() {
                   <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
                     
                     {/* General Text Search */}
-                    <div className="flex-1 bg-slate-50 px-3.5 py-2.5 rounded-2xl border border-gray-200 flex items-center gap-2">
+                    <div className="flex-1 bg-slate-50 px-3.5 py-2.5 rounded-2xl border border-gray-200 flex items-center gap-2 block">
                       <Search className="w-4.5 h-4.5 text-gray-400 shrink-0 ml-1" />
                       <input
                         type="text"
@@ -1283,6 +2061,22 @@ export default function App() {
                           <X className="w-3.5 h-3.5" />
                         </button>
                       )}
+                    </div>
+
+                    {/* Sorting Selector Control Group */}
+                    <div className="bg-slate-50 px-3.5 py-2.5 rounded-2xl border border-gray-200 flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] font-black text-gray-500 shrink-0">ترتيب الكوادر:</span>
+                      <select
+                        value={sortOption}
+                        onChange={(e) => setSortOption(e.target.value)}
+                        className="bg-transparent text-xs font-bold outline-none text-right text-gray-805 cursor-pointer font-sans"
+                      >
+                        <option value="default">الترتيب الافتراضي للنظام</option>
+                        <option value="name-asc">ترتيب حسب الاسم (أ - ي) ⬇️</option>
+                        <option value="name-desc">ترتيب حسب الاسم (ي - أ) ⬆️</option>
+                        <option value="salary-desc">ترتيب حسب الراتب الصافي (الأعلى) 📈</option>
+                        <option value="salary-asc">ترتيب حسب الراتب الصافي (الأقل) 📉</option>
+                      </select>
                     </div>
 
                     {/* Salary Range Filter Control Group */}
@@ -1310,12 +2104,13 @@ export default function App() {
                         />
 
                         {/* Clear/Reset button */}
-                        {(minSalary || maxSalary || searchTerm) && (
+                        {(minSalary || maxSalary || searchTerm || sortOption !== 'default') && (
                           <button
                             onClick={() => {
                               setMinSalary('');
                               setMaxSalary('');
                               setSearchTerm('');
+                              setSortOption('default');
                             }}
                             className="px-3 py-2 bg-red-50 border border-red-100 hover:bg-red-100 text-red-700 font-sans font-black text-[10.5px] rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0"
                             title="تصفير كافة الفلاتر والبحث"
@@ -1377,50 +2172,143 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Live Totals Card For current filtered state */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 print:hidden">
-                  <div className="bg-[#f0fdf4] border border-[#dcfce7] p-3.5 rounded-xl text-center shadow-sm">
-                    <span className="text-[10px] text-green-700 font-bold block mb-1">صافي الرواتب المستحقة</span>
-                    <span className="font-sans text-base font-black text-green-900">{filteredTotals.salarySum.toLocaleString()} د.ع</span>
+                {/* Live Totals Card For current filtered state with professional icons */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:hidden">
+                  
+                  {/* Card 1: Net Salaries */}
+                  <div className="bg-white border border-emerald-100 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-3 text-right">
+                    <div className="flex-1">
+                      <span className="text-[10px] sm:text-xs text-emerald-800 font-black block mb-1">صافي الرواتب المستحقة</span>
+                      <span className="font-sans text-base sm:text-lg font-black text-emerald-900 leading-none">
+                        {filteredTotals.salarySum.toLocaleString()} <span className="text-[10px] font-bold text-emerald-600">د.ع</span>
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-[0_4px_12px_rgba(16,185,129,0.2)]">
+                      <DollarSign className="w-5 h-5 stroke-[2.5]" />
+                    </div>
                   </div>
-                  <div className="bg-[#fef2f2] border border-[#fee2e2] p-3.5 rounded-xl text-center shadow-sm">
-                    <span className="text-[10px] text-red-750 font-bold block mb-1">مجموع العقوبات والاستقطاعات الكلية</span>
-                    <span className="font-sans text-base font-black text-red-905">{filteredTotals.deductionSum.toLocaleString()} د.ع</span>
+
+                  {/* Card 2: Total Deductions */}
+                  <div className="bg-white border border-red-100 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-3 text-right">
+                    <div className="flex-1">
+                      <span className="text-[10px] sm:text-xs text-red-750 font-black block mb-1">مجموع العقوبات والاستقطاعات الكلية</span>
+                      <span className="font-sans text-base sm:text-lg font-black text-red-900 leading-none">
+                        {filteredTotals.deductionSum.toLocaleString()} <span className="text-[10px] font-bold text-red-500">د.ع</span>
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-red-650 text-white flex items-center justify-center shrink-0 shadow-[0_4px_12px_rgba(220,38,38,0.2)]">
+                      <ShieldAlert className="w-5 h-5 stroke-[2.5]" />
+                    </div>
                   </div>
-                  <div className="bg-[#f0f9ff] border border-[#e0f2fe] p-3.5 rounded-xl text-center shadow-sm">
-                    <span className="text-[10px] text-sky-700 font-bold block mb-1">إجمالي البدلات والإضافات العامة</span>
-                    <span className="font-sans text-base font-black text-sky-900">{filteredTotals.additionsSum.toLocaleString()} د.ع</span>
+
+                  {/* Card 3: Total Additions */}
+                  <div className="bg-white border border-sky-100 p-4 rounded-2xl shadow-sm flex items-center justify-between gap-3 text-right">
+                    <div className="flex-1">
+                      <span className="text-[10px] sm:text-xs text-sky-700 font-black block mb-1">إجمالي البدلات والإضافات العامة</span>
+                      <span className="font-sans text-base sm:text-lg font-black text-sky-900 leading-none">
+                        {filteredTotals.additionsSum.toLocaleString()} <span className="text-[10px] font-bold text-sky-600">د.ع</span>
+                      </span>
+                    </div>
+                    <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-[0_4px_12px_rgba(14,165,233,0.2)]">
+                      <Sparkles className="w-5 h-5 stroke-[2.5]" />
+                    </div>
                   </div>
+
                 </div>
 
-                {/* Render separate tables uniquely for the selected departments */}
-                {HOSPITAL_DEPARTMENTS.filter(d => selectedDeptFilter === 'all' || d === selectedDeptFilter).map(dept => {
-                  // تصفية موظفي هذا القسم المحدّد بناءً على البحث
-                  const deptEmps = filteredEmployeesBySearch.filter(e => e.department === dept);
-                  
-                  // لو كنا نعرض كافة الأقسام وتصفية البحث أخفت موظفي قسم؛ لا نرسم جدول القسم فارغاً لتحسين تجربة المستخدم
-                  if (selectedDeptFilter === 'all' && deptEmps.length === 0 && searchTerm) return null;
+                 {/* Render separate tables uniquely for the selected departments */}
+                 {visibleDepartments.filter(d => selectedDeptFilter === 'all' || d === selectedDeptFilter).map(dept => {
+                   // تصفية موظفي هذا القسم المحدّد بناءً على البحث
+                   const deptEmps = sortEmployeesByRank(
+                      filteredEmployeesBySearch.filter(e => e.department === dept),
+                      departmentTitles
+                    );
+                   
+                   // لو كنا نعرض كافة الأقسام وتصفية البحث أخفت موظفي قسم؛ لا نرسم جدول القسم فارغاً لتحسين تجربة المستخدم
+                   if (selectedDeptFilter === 'all' && deptEmps.length === 0 && searchTerm) return null;
 
-                  return (
-                    <div key={dept} className="space-y-2 border-r-4 border-teal-700 bg-white p-4 rounded-3xl border border-gray-150 shadow-sm" id={`dept-panel-${dept}`}>
-                      <div className="flex items-center justify-between px-1">
-                        <span className="text-[10px] bg-teal-800 text-white font-sans font-bold px-2.5 py-1 rounded-lg shadow-sm">
-                          رواتب قسم منفصل 🏷️
-                        </span>
-                        <h4 className="font-black text-gray-850 text-xs">{dept}</h4>
-                      </div>
-                      
-                      <DepartmentPayrollTable 
-                        department={dept}
-                        employees={deptEmps}
-                        onUpdateField={handleUpdateEmployeeField}
-                        onEditClick={handleEditClick}
-                        onDeleteClick={handleDeleteEmployee}
-                        isLocked={releasedMonths[selectedMonth]}
-                      />
-                    </div>
-                  );
-                })}
+                   const isEditing = editingDeptName === dept;
+
+                   return (
+                     <div key={dept} className="space-y-2 border-r-4 border-teal-700 bg-white p-4 rounded-3xl border border-gray-150 shadow-sm" id={`dept-panel-${dept}`}>
+                       <div className="flex items-center justify-between px-1 print:mb-2">
+                         <span className="text-[10px] bg-teal-800 text-white font-sans font-bold px-2.5 py-1 rounded-lg shadow-sm">
+                           {currentUser?.role === 'viewer' ? '👁️ استعراض وتفتيش فقط' : 'رواتب قسم منفصل 🏷️'}
+                         </span>
+                         
+                         {isEditing ? (
+                           <div className="flex items-center gap-1.5 print:hidden">
+                             <input
+                               type="text"
+                               value={newDeptInputName}
+                               onChange={(e) => setNewDeptInputName(e.target.value)}
+                               className="px-2.5 py-1 text-xs font-black border border-teal-600 rounded-xl outline-none bg-slate-50 text-right text-gray-850"
+                               placeholder="اكتب الاسم الجديد للقسم..."
+                               autoFocus
+                             />
+                             <button
+                               onClick={() => handleRenameDepartment(dept, newDeptInputName)}
+                               className="p-1 px-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white rounded-lg transition-all text-xs font-black border border-emerald-200 cursor-pointer"
+                               title="حفظ الاسم الجديد"
+                             >
+                               ✓
+                             </button>
+                             <button
+                               onClick={() => setEditingDeptName(null)}
+                               className="p-1 px-2 bg-red-50 text-red-650 hover:bg-red-650 hover:text-white rounded-lg transition-all text-xs font-black border border-red-200 cursor-pointer"
+                               title="إلغاء التعديل"
+                             >
+                               ✕
+                             </button>
+                           </div>
+                         ) : (
+                           <div className="flex items-center gap-2">
+                             {currentUser?.role === 'admin' && (
+                               <button
+                                 onClick={() => {
+                                   setEditingDeptName(dept);
+                                   setNewDeptInputName(dept);
+                                 }}
+                                 className="text-teal-700 hover:text-teal-900 font-extrabold text-[10px] flex items-center gap-1 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-lg transition-all print:hidden select-none cursor-pointer"
+                               >
+                                 ✏️ تعديل اسم القسم
+                               </button>
+                             )}
+                             <button
+                               onClick={() => handleExportCSV(dept, deptEmps)}
+                               className="text-emerald-750 hover:text-emerald-900 font-extrabold text-[10px] flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition-all print:hidden select-none cursor-pointer border border-emerald-200 shadow-2xs"
+                               title="تحميل كشف الموظفين والرواتب لهذا القسم بصيغة CSV ملائمة لبرنامج Excel وبترميز عربي كامل"
+                             >
+                               <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+                               <span>تصدير CSV 📊</span>
+                             </button>
+                             <div className="flex items-center gap-2">
+                               {(() => {
+                                 const iconInfo = DEPARTMENT_ICONS[dept] || { icon: Building, color: "text-teal-700", bg: "bg-teal-50", border: "border-teal-150" };
+                                 const IconComp = iconInfo.icon;
+                                 return (
+                                   <div className={`p-1 rounded-lg ${iconInfo.bg} ${iconInfo.color} border ${iconInfo.border} shadow-xs shrink-0 flex items-center justify-center`}>
+                                     <IconComp className="w-3.5 h-3.5 stroke-[2.2]" />
+                                   </div>
+                                 );
+                               })()}
+                               <h4 className="font-sans font-black text-gray-800 text-xs">{dept}</h4>
+                             </div>
+                           </div>
+                         )}
+                       </div>
+                       
+                       <DepartmentPayrollTable 
+                         department={dept}
+                         employees={deptEmps}
+                         onUpdateField={handleUpdateEmployeeField}
+                         onEditClick={handleEditClick}
+                         onDeleteClick={handleDeleteEmployee}
+                         isLocked={releasedMonths[selectedMonth] || currentUser?.role === 'viewer'}
+                       />
+                     </div>
+                   );
+                 })}
 
               </div>
 
@@ -1439,11 +2327,290 @@ export default function App() {
               <p className="text-gray-400 text-xs">مخطط تفصيلي لكيفية توزيع الكوادر الحسابية وتصنيف المعاملات ومقارنة أنظمة احتساب الشفتات والساعات لمستشفى الفرح.</p>
             </div>
 
+            {/* ADIMINISTRATOR MANAGEMENT CONSOLE PANEL - Real-time actions */}
+            {currentUser?.role === 'admin' && (
+              <div className="bg-slate-100 border border-slate-200 p-5 rounded-3xl grid grid-cols-1 lg:grid-cols-2 gap-6 shadow-inner print:hidden text-right" dir="rtl">
+                
+                {/* Card 1: Add New Department */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-2.5">
+                    <Building className="w-5 h-5 text-teal-850" />
+                    <h4 className="font-sans font-black text-gray-850 text-xs">١. منصة إدراج قسم تنظيمي جديد لمستشفى الفرح 🏢</h4>
+                  </div>
+                  
+                  <form onSubmit={handleAddDepartment} className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-500 font-extrabold block">اسم القسم الطبي أو الإداري الجديد:</label>
+                      <input
+                        type="text"
+                        required
+                        value={newDeptNameVal}
+                        onChange={(e) => setNewDeptNameVal(e.target.value)}
+                        placeholder="مثال: قسم مركز الطوارئ والعناية المركزة..."
+                        className="w-full text-xs font-bold bg-slate-50 border border-gray-200 rounded-xl px-3 py-2.5 text-right outline-none focus:border-teal-700 text-gray-800"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-500 font-extrabold block">المسمى الوظيفي الأولي الافتراضي بالقسم:</label>
+                      <input
+                        type="text"
+                        value={newDeptInitialTitleVal}
+                        onChange={(e) => setNewDeptInitialTitleVal(e.target.value)}
+                        placeholder="مثال: طبيب مقيم أقدم أو مساعد..."
+                        className="w-full text-xs font-bold bg-slate-50 border border-gray-200 rounded-xl px-3 py-2.5 text-right outline-none focus:border-teal-700 text-gray-800"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-teal-800 hover:bg-teal-900 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-sm"
+                    >
+                      حفظ وإدراج القسم الجديد في النظام +
+                    </button>
+                  </form>
+                </div>
+
+                {/* Card 2: Add New Title under specific department */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-2.5">
+                    <Briefcase className="w-5 h-5 text-teal-850" />
+                    <h4 className="font-sans font-black text-gray-850 text-xs">٢. منصة إدراج منصب (مسمى وظيفي) جديد ضمن قسم 💼</h4>
+                  </div>
+
+                  <form onSubmit={handleAddNewTitleToDept} className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-500 font-extrabold block">اختر القسم المستهدف بالتحديث:</label>
+                      <select
+                        value={newTitleTargetDept}
+                        onChange={(e) => setNewTitleTargetDept(e.target.value)}
+                        className="w-full text-xs font-bold bg-slate-50 border border-gray-200 rounded-xl px-3 py-2 text-right outline-none focus:border-teal-700 text-gray-800 cursor-pointer"
+                      >
+                        <option value="">-- اختر القسم الطبي --</option>
+                        {departments.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-gray-500 font-extrabold block">المسمى أو المنصب الجديد المضاف:</label>
+                      <input
+                        type="text"
+                        required
+                        value={newTitleVal}
+                        onChange={(e) => setNewTitleVal(e.target.value)}
+                        placeholder="مثال: تقني خفر رئيسي..."
+                        className="w-full text-xs font-bold bg-slate-50 border border-gray-200 rounded-xl px-3 py-2.5 text-right outline-none focus:border-teal-700 text-gray-800"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 bg-sky-700 hover:bg-sky-800 text-white font-black text-xs rounded-xl transition-all cursor-pointer shadow-sm border border-sky-800"
+                    >
+                      تحديث هيكلية القسم وإضافة المنصب +
+                    </button>
+                  </form>
+                </div>
+
+                {/* Card 3: User Accounts and Permissions Management */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 lg:col-span-2 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-2.5">
+                    <div className="p-1.5 bg-indigo-50 rounded-lg text-indigo-700">
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <h4 className="font-sans font-black text-gray-850 text-xs font-bold">٣. لوحة تفتيش صلاحيات الحسابات وتوزيع الأقسام (المشاهدة والتدقيق) 🔐</h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    
+                    {/* Form to Create New Account */}
+                    <form onSubmit={handleCreateUserAccount} className="space-y-3 md:border-l md:border-gray-150 md:pl-6 text-right">
+                      <span className="text-[10px] text-teal-900 font-black block border-b border-slate-100 pb-1 mb-1">إضافة حساب فني مستخدم:</span>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-500 font-bold block">اسم المستخدم الجديد:</label>
+                        <input
+                          type="text"
+                          required
+                          value={newAccUser}
+                          onChange={(e) => setNewAccUser(e.target.value)}
+                          placeholder="مثال: pharmacy_viewer"
+                          className="w-full text-[11px] font-mono font-bold bg-slate-50 border border-gray-200 rounded-xl px-2 py-1.5 text-right outline-none text-gray-800"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-500 font-bold block">كلمة المرور الأمنية:</label>
+                        <input
+                          type="text"
+                          required
+                          value={newAccPass}
+                          onChange={(e) => setNewAccPass(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full text-[11px] font-mono font-bold bg-slate-50 border border-gray-200 rounded-xl px-2 py-1.5 text-right outline-none text-gray-800"
+                        />
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-500 font-bold block">نوع وصلاحية الحساب:</label>
+                        <select
+                          value={newAccRole}
+                          onChange={(e) => {
+                            const role = e.target.value as 'admin' | 'viewer';
+                            setNewAccRole(role);
+                            if (role === 'admin') setNewAccDepts(['all']);
+                          }}
+                          className="w-full text-[11px] font-bold bg-slate-50 border border-gray-200 rounded-xl px-2 py-1 cursor-pointer text-gray-850"
+                        >
+                          <option value="viewer">مراقب مقيد (مراقب للرواتب فقط)</option>
+                          <option value="admin">مدير فائق (كامل الصلاحيات الفنية)</option>
+                        </select>
+                      </div>
+
+                      {newAccRole === 'viewer' && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-teal-850 font-black block mb-1">الأقسام الطبية المصرح بمشاهدتها فقط:</label>
+                          <div className="max-h-24 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50 space-y-1 text-right">
+                            {departments.map(d => {
+                              const isChecked = newAccDepts.includes(d);
+                              return (
+                                <label key={d} className="flex items-center gap-1.5 text-[9px] font-bold cursor-pointer text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      if (isChecked) {
+                                        setNewAccDepts(newAccDepts.filter(curr => curr !== d));
+                                      } else {
+                                        setNewAccDepts([...newAccDepts, d]);
+                                      }
+                                    }}
+                                    className="rounded text-teal-600 focus:ring-teal-500 shrink-0"
+                                  />
+                                  <span>{d}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        className="w-full py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-black rounded-lg transition-all cursor-pointer shadow-sm"
+                      >
+                        إنشاء مستخدم ومنح الصلاحيات +
+                      </button>
+                    </form>
+
+                    {/* Existing Accounts List */}
+                    <div className="col-span-2 space-y-2 text-right">
+                      <span className="text-[10px] text-teal-900 font-black block border-b border-slate-100 pb-1 mb-1">الحسابات الحالية والصلاحيات الممنوحة:</span>
+                      <div className="max-h-72 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-150 bg-slate-55 p-2 space-y-2">
+                        {userAccounts.map(account => (
+                          <div key={account.username} className="text-xs p-2.5 bg-white border border-gray-150 rounded-lg flex items-center justify-between gap-3 shadow-xs">
+                            <button
+                              onClick={() => handleDeleteUserAccount(account.username)}
+                              disabled={account.username === 'admin'}
+                              className="px-2 py-1 text-[9px] font-bold text-red-650 hover:text-white hover:bg-red-650 rounded-lg border border-red-200 disabled:opacity-50 transition-all cursor-pointer"
+                            >
+                              حذف الحساب 🗑️
+                            </button>
+                            <div className="text-right space-y-1.5">
+                              <div className="flex items-center gap-2 justify-end">
+                                <span className="font-mono bg-slate-100 px-2 py-0.5 rounded-lg border text-gray-800 font-black">{account.username}</span>
+                                <span className={`text-[9px] px-2 py-0.5 rounded-md font-black ${account.role === 'admin' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'}`}>
+                                  {account.role === 'admin' ? 'مدير فائق' : 'مراقب حسابات'}
+                                </span>
+                              </div>
+                              <div className="text-[9px] text-gray-400">
+                                <span className="font-black text-gray-500">كلمة المرور: </span>
+                                <span className="font-mono font-bold text-gray-700">{account.password}</span>
+                              </div>
+                              <div className="text-[9px] leading-relaxed text-gray-500">
+                                <span className="font-black text-teal-900">الأقسام الطبية المصرحة: </span>
+                                <span className="font-bold">
+                                  {account.allowedDepartments.includes('all') 
+                                    ? 'بكافة الأقسام الـ 15 (كامل الصلاحيات 🟢)' 
+                                    : account.allowedDepartments.join(' + ')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Card 4: Cloud Synchronization & LocalStorage Backup Protection */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 lg:col-span-2 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-gray-100 pb-2.5">
+                    <div className="p-1.5 bg-emerald-50 rounded-lg text-emerald-700">
+                      <Cloud className="w-5 h-5" />
+                    </div>
+                    <h4 className="font-sans font-black text-gray-850 text-xs font-bold">٤. نظام المزامنة السحابية وضمان استمرارية البيانات الاحتياطية ☁️</h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-right">
+                    <div className="space-y-3">
+                      <span className="text-[10px] text-teal-900 font-black block border-b border-slate-100 pb-1 mb-1">دليل المزامنة السحابية:</span>
+                      <p className="text-[11px] text-gray-500 leading-relaxed font-semibold">
+                        يقوم النظام تلقائياً برصد أي تغييرات تطرأ على قاعدة البيانات المسجلة محلياً (إضافة موظف، تعديل رواتب، تعديل رتب الأقسام، أو رسائل المساعد الذكي) ويرسلها مباشرة وبأمان إلى الخادم السحابي.
+                        <br />
+                        <span className="text-emerald-700 font-extrabold">ميزة الحماية والشفاء الذاتي:</span> في حال قيام المتصفح بمسح التخزين المؤقت المحلي أو عند تصفح النظام من جهاز أو متصفح آخر، فإن النظام يسترجع النسخة السحابية لرواتب المستشفى تلقائياً وبسرعة فائقة لضمان عدم حدوث أي فقد في البيانات.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-55 border border-slate-200 rounded-xl space-y-3 flex flex-col justify-between">
+                      <div>
+                        <span className="text-[10px] text-teal-950 font-black block mb-2">حالة الاتصال ومزامنة البيانات حالياً:</span>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-1 text-xs">
+                            <span className="font-bold text-gray-500">خادر المزامنة السحابية:</span>
+                            <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100 text-[10px]">نشط ومتوفر 🟢</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-1 text-xs">
+                            <span className="font-bold text-gray-500">حالة عملية الربط:</span>
+                            {syncStatus === 'syncing' ? (
+                              <span className="font-bold text-amber-700 animate-pulse text-[10px]">جاري الرفع السحابي الآن...</span>
+                            ) : syncStatus === 'success' ? (
+                              <span className="font-bold text-emerald-700 text-[10px]">تم الحفظ والتحصين السحابي بنجاح ✅</span>
+                            ) : syncStatus === 'error' ? (
+                              <span className="font-bold text-red-650 text-[10px]">خطأ في الاتصال بالسيرفر السحابي ❌</span>
+                            ) : (
+                              <span className="font-bold text-gray-500 text-[10px]">بانتظار إجراء أي تعديلات ⛅</span>
+                            )}
+                          </div>
+                          {lastSyncedAt && (
+                            <div className="flex items-center justify-between gap-1 text-xs">
+                              <span className="font-bold text-gray-500">توقيت آخر مزامنة ناجحة:</span>
+                              <span className="font-mono text-gray-700 font-bold text-[10px]">{lastSyncedAt}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={performCloudSync}
+                          disabled={syncStatus === 'syncing'}
+                          className="flex-1 py-1.5 bg-teal-850 hover:bg-teal-900 font-black text-white text-[10px] rounded-lg transition-all cursor-pointer shadow-sm text-center flex items-center justify-center gap-1.5 disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${syncStatus === 'syncing' ? 'animate-spin' : ''}`} />
+                          مزامنة وحفظ فوري سحابي 🔄
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
              {/* General Description grid list */}
              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-               {HOSPITAL_DEPARTMENTS.map((dept, i) => {
+               {visibleDepartments.map((dept, i) => {
                  const emps = employees.filter(e => e.department === dept);
-                 const titles = DEPARTMENT_TITLES[dept] || [];
+                 const titles = departmentTitles[dept] || [];
                  const info = DEPARTMENT_ICONS[dept] || { icon: Building, color: "text-teal-700", bg: "bg-teal-50", border: "border-teal-200" };
                  const IconComp = info.icon;
                  
@@ -1510,7 +2677,7 @@ export default function App() {
                     onChange={(e) => setAuditDept(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-200 focus:border-teal-700 rounded-xl outline-none font-bold bg-slate-50 text-xs text-gray-800"
                   >
-                    {HOSPITAL_DEPARTMENTS.map(d => (
+                    {visibleDepartments.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -1680,10 +2847,10 @@ export default function App() {
                 <select
                   value={currentPrintDept}
                   onChange={(e) => setCurrentPrintDept(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-xl outline-none focus:border-teal-700 font-bold bg-white text-xs"
+                  className="px-3 py-2 border border-gray-200 rounded-xl outline-none focus:border-teal-700 font-bold bg-white text-xs cursor-pointer"
                 >
                   <option value="all">كافة الأقسام الطبية والإدارية معاً</option>
-                  {HOSPITAL_DEPARTMENTS.map(d => (
+                  {visibleDepartments.map(d => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
@@ -1709,42 +2876,14 @@ export default function App() {
             </div>
 
             {/* Printable canvas mockup container */}
-            <div className="bg-white border border-gray-250 p-8 rounded-3xl shadow-xl space-y-8 print:p-0 print:border-none print:shadow-none" id="printable-area-mockup">
+            <div className="bg-white border border-gray-250 p-5 rounded-2xl shadow-lg space-y-4 print:p-0 print:border-none print:shadow-none text-right" id="printable-area-mockup">
               
               {/* Report banner */}
               <div className="border-b-4 border-teal-800 pb-5 flex items-center justify-between">
                 <div className="flex items-center gap-4 text-right">
                   <svg viewBox="0 0 200 200" className="w-16 h-16 shrink-0 select-none" id="hospital-brand-logo-print">
-                    {/* Outer Circle Ring Group */}
                     <circle cx="100" cy="100" r="94" fill="#149cb7" stroke="#ffffff" strokeWidth="2" />
                     <circle cx="100" cy="100" r="91" fill="none" stroke="#ffffff" strokeWidth="1" />
-                    
-                    {/* Define Paths for Curved Text */}
-                    <defs>
-                      {/* Top Arc for Arabic Text */}
-                      <path id="text-path-top-print" d="M 23 100 A 77 77 0 0 1 177 100" fill="none" />
-                      {/* Bottom Arc for English Text */}
-                      <path id="text-path-bottom-print" d="M 177 100 A 77 77 0 0 1 23 100" fill="none" />
-                    </defs>
-
-                    {/* Curved Texts with SVG TextPath */}
-                    <text fill="#ffffff" className="font-sans font-bold text-[14px]">
-                      <textPath href="#text-path-top-print" startOffset="50%" textAnchor="middle">
-                        مستشفى الفرح الأهلي
-                      </textPath>
-                    </text>
-                    
-                    <text fill="#ffffff" className="font-sans font-extrabold text-[9.5px] uppercase tracking-[0.03em]">
-                      <textPath href="#text-path-bottom-print" startOffset="50%" textAnchor="middle">
-                        AL FARAH PRIVATE HOSPITAL
-                      </textPath>
-                    </text>
-
-                    {/* Decorative Gold Circles on the left and right */}
-                    <circle cx="21" cy="100" r="3.5" fill="#cda13c" />
-                    <circle cx="179" cy="100" r="3.5" fill="#cda13c" />
-
-                    {/* Inner White Circle */}
                     <circle cx="100" cy="100" r="62" fill="#ffffff" stroke="#149cb7" strokeWidth="1" />
                     
                     {/* Center Gold graphic: Tree, ECG beat & Hospital name */}
@@ -1807,15 +2946,15 @@ export default function App() {
               </div>
 
               {/* List of department structures */}
-              <div className="space-y-8 select-text">
-                {HOSPITAL_DEPARTMENTS.filter(d => currentPrintDept === 'all' || d === currentPrintDept).map(dept => {
-                  const deptEmps = employees.filter(e => e.department === dept);
+              <div className="space-y-4 select-text">
+                {visibleDepartments.filter(d => currentPrintDept === 'all' || d === currentPrintDept).map(dept => {
+                  const deptEmps = sortEmployeesByRank(employees.filter(e => e.department === dept), departmentTitles);
                   if (deptEmps.length === 0) return null;
 
                   return (
-                    <div key={dept} className="space-y-3 break-inside-avoid">
-                      <div className="border-b-2 border-slate-800 pb-1 flex items-center justify-between">
-                        <span className="text-xs text-gray-400 font-bold font-sans">عدد الكادر: {deptEmps.length} موظفين صنف {dept}</span>
+                    <div key={dept} className="space-y-1.5 break-inside-avoid">
+                      <div className="border-b border-teal-800 pb-0.5 flex items-center justify-between">
+                        <span className="text-[10px] text-gray-400 font-bold font-sans">عدد الكادر: {deptEmps.length} موظفين صنف {dept}</span>
                         <h3 className="font-black text-gray-900 text-xs">{dept}</h3>
                       </div>
 
@@ -1880,8 +3019,8 @@ export default function App() {
                     onChange={(e) => setSignatureFilterDept(e.target.value)}
                     className="px-3 py-2 bg-slate-50 border border-gray-200 text-gray-800 font-sans font-bold text-xs rounded-xl outline-none focus:border-teal-700 cursor-pointer"
                   >
-                    <option value="all">كافة أقسام مستشفى الفرح الأربعة عشر</option>
-                    {HOSPITAL_DEPARTMENTS.map(d => (
+                    <option value="all">كافة أقسام مستشفى الفرح المتاحة</option>
+                    {visibleDepartments.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -1925,7 +3064,7 @@ export default function App() {
                   <span className="inline-block px-3 py-1 bg-teal-50 border border-teal-150 text-teal-900 font-sans font-black text-xs rounded-xl mb-1">
                     {MONTHS_LIST.find(m => m.id === selectedMonth)?.arabicName || selectedMonth}
                   </span>
-                  <p className="text-[10px] text-gray-450 font-bold block">تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</p>
+                  <p className="text-[10px] text-gray-405 font-bold block">تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</p>
                 </div>
               </div>
 
@@ -1941,8 +3080,8 @@ export default function App() {
 
               {/* The dynamic department-by-department signatures list rendering */}
               <div className="space-y-10 select-text">
-                {HOSPITAL_DEPARTMENTS.filter(d => signatureFilterDept === 'all' || d === signatureFilterDept).map(dept => {
-                  const deptEmps = employees.filter(e => e.department === dept);
+                {visibleDepartments.filter(d => signatureFilterDept === 'all' || d === signatureFilterDept).map(dept => {
+                  const deptEmps = sortEmployeesByRank(employees.filter(e => e.department === dept), departmentTitles);
                   if (deptEmps.length === 0) return null;
 
                   return (
@@ -2087,51 +3226,71 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 print:grid-cols-4 print:gap-4 print:mb-6">
                 
                 {/* Card 1: Grand Gross Sum */}
-                <div className="bg-white p-5 rounded-[1.25rem] border border-gray-150 shadow-sm text-right flex flex-col justify-between">
-                  <span className="text-gray-400 font-bold text-[10px] block mb-1">المجموع الكلي لرواتب المستشفى الكلي</span>
-                  <div>
-                    <span className="font-sans text-xl font-black text-gray-900">
-                      {departmentalSalariesSummary.grandGrossSalary.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-gray-500 font-bold mr-1">د.ع</span>
+                <div className="bg-white p-5 rounded-[1.25rem] border border-gray-150 shadow-sm text-right flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <span className="text-gray-400 font-bold text-[10px] block mb-1">المجموع الكلي لرواتب المستشفى الكلي</span>
+                    <div>
+                      <span className="font-sans text-xl font-black text-gray-900">
+                        {departmentalSalariesSummary.grandGrossSalary.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-bold mr-1">د.ع</span>
+                    </div>
+                    <span className="text-[9px] text-slate-400 font-bold mt-1.5 block font-sans">عقود التعاقد قبل الاقتطاع</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 font-bold mt-2 font-sans">عقود التعاقد قبل الاقتطاع</span>
+                  <div className="w-11 h-11 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0 border border-slate-205 shadow-xs">
+                    <Coins className="w-5 h-5 stroke-[2.2]" />
+                  </div>
                 </div>
 
                 {/* Card 2: Grand Net Sum (THE CEILING RESULT) */}
-                <div className="bg-gradient-to-br from-teal-900 to-teal-800 p-5 rounded-[1.25rem] text-white shadow-md text-right flex flex-col justify-between">
-                  <span className="text-teal-200 font-bold text-[10px] block mb-1">المجموع الصافي النهائي المستحق دفعه 💰</span>
-                  <div>
-                    <span className="font-sans text-xl font-black text-teal-50">
-                      {departmentalSalariesSummary.grandNetSalary.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-teal-200 font-bold mr-1">د.ع</span>
+                <div className="bg-gradient-to-br from-teal-900 to-teal-800 p-5 rounded-[1.25rem] text-white shadow-md text-right flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <span className="text-teal-200 font-bold text-[10px] block mb-1">المجموع الصافي النهائي المستحق دفعه 💰</span>
+                    <div>
+                      <span className="font-sans text-xl font-black text-teal-50">
+                        {departmentalSalariesSummary.grandNetSalary.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-teal-200 font-bold mr-1">د.ع</span>
+                    </div>
+                    <span className="text-[9px] text-teal-100 font-bold mt-1.5 block">صافي النقد المقرر توزيعه على الكوادر فعلياً</span>
                   </div>
-                  <span className="text-[9px] text-teal-100 font-bold mt-2">صافي النقد المقرر توزيعه على الكوادر فعلياً</span>
+                  <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-[0_4px_12px_rgba(16,185,129,0.3)]">
+                    <DollarSign className="w-5 h-5 text-white stroke-[2.5]" />
+                  </div>
                 </div>
 
                 {/* Card 3: Total Grand Deductions */}
-                <div className="bg-white p-5 rounded-[1.25rem] border border-gray-150 shadow-sm text-right flex flex-col justify-between">
-                  <span className="text-gray-400 font-bold text-[10px] block mb-1">إجمالي الخصومات واستقطاع الغيابات</span>
-                  <div>
-                    <span className="font-sans text-xl font-black text-red-650">
-                      {departmentalSalariesSummary.grandDeductions.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-red-500 font-bold mr-1">د.ع</span>
+                <div className="bg-white p-5 rounded-[1.25rem] border border-gray-150 shadow-sm text-right flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <span className="text-gray-400 font-bold text-[10px] block mb-1">إجمالي الخصومات واستقطاع الغيابات</span>
+                    <div>
+                      <span className="font-sans text-xl font-black text-red-650">
+                        {departmentalSalariesSummary.grandDeductions.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-red-500 font-bold mr-1">د.ع</span>
+                    </div>
+                    <span className="text-[9px] text-red-400 font-semibold mt-1.5 block">العقوبات والغيابات والساعات التقصيرية</span>
                   </div>
-                  <span className="text-[9px] text-red-400 font-semibold mt-2">العقوبات والغيابات والساعات التقصيرية</span>
+                  <div className="w-11 h-11 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0 border border-red-150 shadow-xs">
+                    <ShieldAlert className="w-5 h-5 stroke-[2.2]" />
+                  </div>
                 </div>
 
                 {/* Card 4: Total Hospital Staff strength */}
-                <div className="bg-white p-5 rounded-[1.25rem] border border-gray-150 shadow-sm text-right flex flex-col justify-between">
-                  <span className="text-gray-400 font-bold text-[10px] block mb-1">إجمالي المنتسبين بالخدمة حالياً</span>
-                  <div>
-                    <span className="font-sans text-xl font-black text-indigo-950">
-                      {departmentalSalariesSummary.grandStaffCount}
-                    </span>
-                    <span className="text-[10px] text-gray-500 font-bold mr-1">موظف ونقيب</span>
+                <div className="bg-white p-5 rounded-[1.25rem] border border-gray-150 shadow-sm text-right flex items-center justify-between gap-3">
+                  <div className="flex-1">
+                    <span className="text-gray-400 font-bold text-[10px] block mb-1">إجمالي المنتسبين بالخدمة حالياً</span>
+                    <div>
+                      <span className="font-sans text-xl font-black text-indigo-950">
+                        {departmentalSalariesSummary.grandStaffCount}
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-bold mr-1">موظف ونقيب</span>
+                    </div>
+                    <span className="text-[9px] text-indigo-400 font-semibold mt-1.5 block">المشمولين بالدورة المالية الحالية</span>
                   </div>
-                  <span className="text-[9px] text-indigo-400 font-semibold mt-2">المشمولين بالدورة المالية الحالية</span>
+                  <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-150 shadow-xs">
+                    <Users className="w-5 h-5 stroke-[2.2]" />
+                  </div>
                 </div>
 
               </div>
@@ -2180,6 +3339,7 @@ export default function App() {
                           <th className="p-3 border border-gray-150 font-bold text-gray-800">القسم / المركز الطبي الإداري بالمستشفى</th>
                           <th className="p-2 border border-gray-150 font-bold text-center text-gray-800 w-24">عدد الكوادر</th>
                           <th className="p-2 border border-gray-150 font-bold text-center text-gray-800">المجموع الكلي</th>
+                          <th className="p-2 border border-gray-150 font-bold text-center text-emerald-850">الإضافات الكلية</th>
                           <th className="p-2 border border-gray-150 font-bold text-center text-red-700">الخصومات الكلية</th>
                           <th className="p-3 border border-gray-150 font-bold text-center text-emerald-800 bg-teal-50">صافي الرواتب (الصافي) 💰</th>
                         </tr>
@@ -2223,6 +3383,11 @@ export default function App() {
                                 {deptSum.grossSalary.toLocaleString()} د.ع
                               </td>
 
+                              {/* Additions Sum */}
+                              <td className="p-2 border border-gray-200 text-center font-mono font-bold text-emerald-600">
+                                {deptSum.additions > 0 ? `+${deptSum.additions.toLocaleString()} د.ع` : 'ـ'}
+                              </td>
+
                               {/* Deductions Sum */}
                               <td className="p-2 border border-gray-200 text-center font-mono font-bold text-red-650">
                                 {deptSum.deductions > 0 ? `${deptSum.deductions.toLocaleString()} د.ع` : 'ـ'}
@@ -2246,6 +3411,9 @@ export default function App() {
                           </td>
                           <td className="p-3 text-center font-mono text-slate-950 font-black">
                             {departmentalSalariesSummary.grandGrossSalary.toLocaleString()} د.ع
+                          </td>
+                          <td className="p-3 text-center font-mono text-emerald-700 font-black">
+                            {departmentalSalariesSummary.grandAdditions.toLocaleString()} د.ع
                           </td>
                           <td className="p-3 text-center font-mono text-red-700 font-black">
                             {departmentalSalariesSummary.grandDeductions.toLocaleString()} د.ع
@@ -2425,9 +3593,9 @@ export default function App() {
                     <select
                       value={formState.department}
                       onChange={(e) => handleFormDeptChange(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-gray-800 font-bold outline-none"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-gray-800 font-bold outline-none cursor-pointer"
                     >
-                      {HOSPITAL_DEPARTMENTS.map(d => (
+                      {visibleDepartments.map(d => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
@@ -2438,9 +3606,9 @@ export default function App() {
                     <select
                       value={formState.title}
                       onChange={(e) => setFormState((prev: any) => ({ ...prev, title: e.target.value }))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-gray-800 font-bold outline-none"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white text-gray-800 font-bold outline-none cursor-pointer"
                     >
-                      {(DEPARTMENT_TITLES[formState.department] || []).map(t => (
+                      {(departmentTitles[formState.department] || []).map(t => (
                         <option key={t} value={t}>{t}</option>
                       ))}
                       <option value="عنوان مخصص">عنوان مخصص بالقسم...</option>

@@ -41,6 +41,8 @@ export default function DepartmentPayrollTable({
     if (isPrintMode) {
       return <span className="font-mono font-bold text-gray-800">{value.toLocaleString()}</span>;
     }
+    const isMoneyField = ['baseSalary', 'totalSalary', 'radiologyTotalSum', 'securityTotalSum', 'ambulanceTotalSum', 'morningShiftValue', 'nightShiftValue', 'fullDayValue', 'halfShiftValue', 'dayValue', 'hourValue', 'recallValue', 'jointDayValue', 'halfShiftValue9', 'dayValue12h', 'shiftValue11', 'additions', 'deductions', 'penalties'].includes(field as string);
+    const widthClass = isMoneyField ? 'w-24 min-w-[96px]' : 'w-16';
     return (
       <input
         type="number"
@@ -49,7 +51,7 @@ export default function DepartmentPayrollTable({
         value={value || ''}
         disabled={isLocked}
         onChange={(e) => onUpdateField(empId, field, Number(e.target.value))}
-        className={`w-16 px-1.5 py-1 text-center font-mono font-bold text-gray-800 border outline-none rounded-lg text-xs transition-all ${
+        className={`${widthClass} px-1.5 py-1 text-center font-mono font-bold text-gray-800 border outline-none rounded-lg text-xs transition-all ${
           isLocked 
             ? 'bg-slate-100 border-slate-200 text-gray-400 cursor-not-allowed opacity-60' 
             : 'bg-slate-50 border-gray-200 focus:border-teal-700'

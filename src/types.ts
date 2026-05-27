@@ -133,3 +133,19 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
 }
+
+export interface AuditAlert {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  type: 'salary_variance_high' | 'salary_variance_low' | 'high_overtime' | 'high_deductions' | 'flat_rate_gap' | 'suspicious_work_days' | 'zero_salary';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  title: string;
+  description: string;
+  currentValue: number;
+  historicalValue?: number;
+  variancePercentage?: number;
+  month: string;
+}
+

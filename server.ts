@@ -5,6 +5,7 @@
 
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -13,7 +14,49 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+const CLOUD_STORE_PATH = path.join(process.cwd(), "cloud_store.json");
+
+// Endpoint for saving / syncing data to cloud mock file
+app.post("/api/cloud-sync", (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || typeof data !== "object") {
+      res.status(400).json({ status: "error", error: "بيانات غير صالحة للمزامنة" });
+      return;
+    }
+    
+    // Write data to our cloud_store.json file as our cloud database endpoint
+    fs.writeFileSync(CLOUD_STORE_PATH, JSON.stringify({
+      updatedAt: new Date().toISOString(),
+      payload: data
+    }, null, 2), "utf8");
+
+    res.json({ status: "ok", message: "تمت المزامنة وحفظ النسخة الاحتياطية بنجاح ☁️", updatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    console.error("Cloud-sync write error:", err);
+    res.status(500).json({ status: "error", error: "فشل حفظ النسخة الاحتياطية السحابية" });
+  }
+});
+
+// Endpoint for retrieving synced data
+app.get("/api/cloud-sync", (req, res) => {
+  try {
+    if (!fs.existsSync(CLOUD_STORE_PATH)) {
+      res.json({ status: "empty", message: "لا توجد نسخة احتياطية سحابية حالية" });
+      return;
+    }
+
+    const fileContent = fs.readFileSync(CLOUD_STORE_PATH, "utf8");
+    const parsed = JSON.parse(fileContent);
+    res.json({ status: "ok", ...parsed });
+  } catch (err: any) {
+    console.error("Cloud-sync read error:", err);
+    res.status(500).json({ status: "error", error: "فشل استرجاع البيانات السحابية" });
+  }
+});
 
 // Lazy-loaded Gemini AI client helper
 let aiClient: GoogleGenAI | null = null;
