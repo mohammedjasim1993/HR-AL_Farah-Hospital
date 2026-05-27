@@ -5,367 +5,203 @@
 
 import { Employee, PayrollRecord } from './types';
 
-// قائمة الأقسام المعتمدة في مستشفى الفرح الأهلي
+// قائمة الأقسام الـ 15 المعتمدة بالتفصيل لمستشفى الفرح الأهلي
 export const HOSPITAL_DEPARTMENTS = [
-  "الإدارة العامة",
-  "قسم العمليات",
+  "الادارة العليا",
   "قسم الصيدلية",
+  "قسم العمليات",
   "قسم النسائية والتوليد",
-  "الكافتيريا",
-  "قسم الأطفال والخدج",
-  "قسم الأشعة والمفراس والسونار",
-  "قسم أطباء الخدج المقيمين",
-  "قسم المختبر",
-  "قسم التمريض الأطباء المقيمين",
-  "قسم التمريض الردهات والطوارئ",
-  "قسم أطباء النسائية",
-  "قسم الأمنية والحراسة",
-  "قسم الإسعاف الفوري"
+  "قسم الكافتريا",
+  "قسم الاطفال والخدج",
+  "قسم السونار",
+  "قسم اطباء الخدج المقيمين",
+  "قسم المختبر ومصرف الدم",
+  "قسم الاطباء المقيمين",
+  "قسم التمريض والردهات والطواريء",
+  "قسم اطباء النسائية",
+  "قسم الاشعة",
+  "قسم الامنية",
+  "قسم الاسعاف"
 ];
 
-// قائمة المناصب التفصيلية حسب الهيكلية المرفقة لمستشفى الفرح الأهلي
+// قائمة المناصب التفصيلية المطابقة للأقسام الجديدة
 export const DEPARTMENT_TITLES: Record<string, string[]> = {
-  "الإدارة العامة": [
+  "الادارة العليا": [
     "المدير التنفيذي",
     "المدير الإداري",
     "مدير قسم الحسابات",
     "موظف حسابات",
-    "مدير قسم تقنية المعلومات",
-    "مدير قسم الاحصاء",
-    "موظف احصاء",
     "مسؤول الاستعلامات",
-    "موظف استقبال",
-    "مدير قسم الخدمات",
-    "موظف خدمات",
-    "مدير قسم الموارد البشرية"
-  ],
-  "قسم العمليات": [
-    "مسؤول صالة العمليات",
-    "موظف خدمات",
-    "مساعد جراح",
-    "مساعد تخدير",
-    "مدخل بيانات"
+    "موظف استقبال"
   ],
   "قسم الصيدلية": [
     "مسؤول الصيدلية",
-    "صيدلاني"
+    "صيدلاني خفر",
+    "صيدلاني ممارس"
+  ],
+  "قسم العمليات": [
+    "مسؤول صالة العمليات",
+    "مساعد جراح",
+    "مساعد تخدير",
+    "ممرض عمليات"
   ],
   "قسم النسائية والتوليد": [
-    "قابلة"
+    "قابلة مأذونة",
+    "ممرضة توليد"
   ],
-  "الكافتيريا": [
-    "كلفة / طباخ",
-    "عامل"
+  "قسم الكافتريا": [
+    "طباخ رئيسي",
+    "عامل صالة",
+    "كاشير"
   ],
-  "قسم الأطفال والخدج": [
-    "مسؤول قسم تمريض الخدج",
-    "ممرض"
+  "قسم الاطفال والخدج": [
+    "مسؤول تمريض الخدج",
+    "ممرض أطفال",
+    "طبيب أطفال خفر"
   ],
-  "قسم الأشعة والمفراس والسونار": [
-    "مسؤول قسم الأشعة والسونار",
-    "طبيب أشعة وسونار"
+  "قسم السونار": [
+    "اختصاصي سونار وملخص",
+    "طبيب استدعاء مفراس"
   ],
-  "قسم أطباء الخدج المقيمين": [
-    "طبيب مقيم"
+  "قسم اطباء الخدج المقيمين": [
+    "طبيب مقيم أطفال وخدج"
   ],
-  "قسم المختبر": [
-    "مسؤول قسم المختبر",
-    "محلل"
+  "قسم المختبر ومصرف الدم": [
+    "مسؤول المختبر العلمي",
+    "محلل كيميائي",
+    "تقني سحب دم"
   ],
-  "قسم التمريض الأطباء المقيمين": [
-    "مسؤول الأطباء المقيمين",
-    "طبيب مقيم"
+  "قسم الاطباء المقيمين": [
+    "طبيب مقيم دوري خفر",
+    "مسؤول الأطباء المقيمين"
   ],
-  "قسم التمريض الردهات والطوارئ": [
-    "ممرض"
+  "قسم التمريض والردهات والطواريء": [
+    "ممرض طوارئ رئيسي",
+    "ممرض ردهة صباحي",
+    "مسؤول التمريض الليلي"
   ],
-  "قسم أطباء النسائية": [
-    "مسؤول قسم أطباء النسائية",
-    "طبيبة نسائية"
+  "قسم اطباء النسائية": [
+    "طبيبة نسائية أخصائية",
+    "مسؤولة قسم التوليد"
   ],
-  "قسم الأمنية والحراسة": [
-    "مسؤول الأمنية",
-    "حارس أمن"
+  "قسم الاشعة": [
+    "مسؤول قسم الأشعة",
+    "تقني أشعة وسونار",
+    "طبيب أشعة استشاري"
   ],
-  "قسم الإسعاف الفوري": [
-    "سائق إسعاف",
-    "مسعف طوارئ"
+  "قسم الامنية": [
+    "مسؤول الأمن والسلامة",
+    "حارس أمن نوبة"
+  ],
+  "قسم الاسعاف": [
+    "سائق إسعاف فوري",
+    "مسعف طوارئ ميداني"
   ]
 };
 
-// تهيئة الموظفين ببيانات واقعية تحاكي شجرة مستشفى الفرح الأهلي بدقة متناهية
+// تهيئة الموظفين ببيانات واقعية تحاكي شجرة مستشفى الفرح الأهلي مع كامل الحقول المخصصة لكل قسم
 export const INITIAL_EMPLOYEES: Employee[] = [
-  // 1. الإدارة العامة
+  // 1. الادارة العليا
   {
     id: "EMP-1001",
     name: "أ. حيدر الخفاجي",
-    department: "الإدارة العامة",
+    department: "الادارة العليا",
     title: "المدير التنفيذي",
-    totalSalary: 3500000,
-    dailySalary: Math.round(3500000 / 30),
-    hourlySalary: Math.round((3500000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2020-01-15",
     status: "active",
-    notes: "مدير الإدارة العامة للمستشفى"
+    joinedDate: "2020-01-15",
+    baseSalary: 3500000,
+    overtimeDays: 2,
+    overtimeHours: 5,
+    penalties: 0,
+    workDaysCount: 30,
+    notes: "الإدارة العليا للمستشفى"
   },
   {
     id: "EMP-1002",
     name: "أ. عمر نصير ياسين",
-    department: "الإدارة العامة",
+    department: "الادارة العليا",
     title: "المدير الإداري",
-    totalSalary: 2500000,
-    dailySalary: Math.round(2500000 / 30),
-    hourlySalary: Math.round((2500000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    status: "active",
     joinedDate: "2021-03-10",
-    status: "active"
+    baseSalary: 2505000,
+    overtimeDays: 0,
+    overtimeHours: 0,
+    penalties: 50000,
+    workDaysCount: 29,
+    notes: "مدير الشؤون الإدارية"
   },
   {
     id: "EMP-1003",
     name: "أ. مصطفى كامل الأسدي",
-    department: "الإدارة العامة",
+    department: "الادارة العليا",
     title: "مدير قسم الحسابات",
-    totalSalary: 2000000,
-    dailySalary: Math.round(2000000 / 30),
-    hourlySalary: Math.round((2000000 / 30) / 8),
-    deductionDays: 1, // تجسيد استقطاع افتراضي للتوضيح
-    deductionHours: 2,
-    isFlatRate: false,
+    status: "active",
     joinedDate: "2021-06-01",
-    status: "active"
-  },
-  {
-    id: "EMP-1004",
-    name: "علي باسم التميمي",
-    department: "الإدارة العامة",
-    title: "موظف حسابات",
-    totalSalary: 1200000,
-    dailySalary: Math.round(1200000 / 30),
-    hourlySalary: Math.round((1200000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2023-01-20",
-    status: "active"
-  },
-  {
-    id: "EMP-1005",
-    name: "م. سيف الدين زاهر",
-    department: "الإدارة العامة",
-    title: "مدير قسم تقنية المعلومات",
-    totalSalary: 1500000,
-    dailySalary: Math.round(1500000 / 30),
-    hourlySalary: Math.round((1500000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2022-05-15",
-    status: "active"
-  },
-  {
-    id: "EMP-1006",
-    name: "أ. أحمد عبد الرزاق",
-    department: "الإدارة العامة",
-    title: "مدير قسم الاحصاء",
-    totalSalary: 1300000,
-    dailySalary: Math.round(1300000 / 30),
-    hourlySalary: Math.round((1300000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2021-09-01",
-    status: "active"
-  },
-  {
-    id: "EMP-1007",
-    name: "رشا كريم البياتي",
-    department: "الإدارة العامة",
-    title: "موظف احصاء",
-    totalSalary: 900000,
-    dailySalary: Math.round(900000 / 30),
-    hourlySalary: Math.round((900000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2024-02-10",
-    status: "active"
-  },
-  {
-    id: "EMP-1008",
-    name: "وليد خالد الكعبي",
-    department: "الإدارة العامة",
-    title: "مسؤول الاستعلامات",
-    totalSalary: 850000,
-    dailySalary: Math.round(850000 / 30),
-    hourlySalary: Math.round((850000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2022-11-12",
-    status: "active"
-  },
-  {
-    id: "EMP-1009",
-    name: "مها جاسم الفتلاوي",
-    department: "الإدارة العامة",
-    title: "موظف استقبال",
-    totalSalary: 750000,
-    dailySalary: Math.round(750000 / 30),
-    hourlySalary: Math.round((750000 / 30) / 8),
-    deductionDays: 2,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2024-01-05",
-    status: "active"
-  },
-  {
-    id: "EMP-1010",
-    name: "جاسم محمد الدفاعي",
-    department: "الإدارة العامة",
-    title: "مدير قسم الخدمات",
-    totalSalary: 1100000,
-    dailySalary: Math.round(1100000 / 30),
-    hourlySalary: Math.round((1100000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2020-04-18",
-    status: "active"
-  },
-  {
-    id: "EMP-1011",
-    name: "حيدر كاظم الخفاجي",
-    department: "الإدارة العامة",
-    title: "موظف خدمات",
-    totalSalary: 650000,
-    dailySalary: Math.round(650000 / 30),
-    hourlySalary: Math.round((650000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 4,
-    isFlatRate: false,
-    joinedDate: "2023-07-22",
-    status: "active"
-  },
-  {
-    id: "EMP-1012",
-    name: "أ. رائد الجبوري",
-    department: "الإدارة العامة",
-    title: "مدير قسم الموارد البشرية",
-    totalSalary: 1800000,
-    dailySalary: Math.round(1800000 / 30),
-    hourlySalary: Math.round((1800000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2020-08-01",
-    status: "active"
+    baseSalary: 2000000,
+    overtimeDays: 3,
+    overtimeHours: 8,
+    penalties: 0,
+    workDaysCount: 30
   },
 
-  // 2. قسم العمليات
+  // 2. قسم الصيدلية
   {
     id: "EMP-2001",
-    name: "د. عمار ياسين الموسوي",
-    department: "قسم العمليات",
-    title: "مسؤول صالة العمليات",
-    totalSalary: 2500000,
-    dailySalary: Math.round(2500000 / 30),
-    hourlySalary: Math.round((2500000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2019-05-15",
-    status: "active"
-  },
-  {
-    id: "EMP-2002",
-    name: "سجاد باسم السوداني",
-    department: "قسم العمليات",
-    title: "موظف خدمات",
-    totalSalary: 650000,
-    dailySalary: Math.round(650000 / 30),
-    hourlySalary: Math.round((650000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2024-03-01",
-    status: "active"
-  },
-  {
-    id: "EMP-2003",
-    name: "ميثم حميد الشمري",
-    department: "قسم العمليات",
-    title: "مساعد جراح",
-    totalSalary: 1500000,
-    dailySalary: Math.round(1500000 / 30),
-    hourlySalary: Math.round((1500000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2021-11-20",
-    status: "active"
-  },
-  {
-    id: "EMP-2004",
-    name: "كرار عبد الصاحب",
-    department: "قسم العمليات",
-    title: "مساعد تخدير",
-    totalSalary: 1400000,
-    dailySalary: Math.round(1400000 / 30),
-    hourlySalary: Math.round((1400000 / 30) / 8),
-    deductionDays: 1,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2022-04-12",
-    status: "active"
-  },
-  {
-    id: "EMP-2005",
-    name: "علي حسن الفتلاوي",
-    department: "قسم العمليات",
-    title: "مدخل بيانات",
-    totalSalary: 800000,
-    dailySalary: Math.round(800000 / 30),
-    hourlySalary: Math.round((800000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2023-10-01",
-    status: "active"
-  },
-
-  // 3. قسم الصيدلية
-  {
-    id: "EMP-3001",
     name: "د. ص. رانيا مرتضى الصدر",
     department: "قسم الصيدلية",
     title: "مسؤول الصيدلية",
-    totalSalary: 2100000,
-    dailySalary: Math.round(2100000 / 30),
-    hourlySalary: Math.round((2100000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    status: "active",
     joinedDate: "2021-02-14",
-    status: "active"
+    morningShiftValue: 80000,
+    nightShiftValue: 120000,
+    morningShiftDays: 16,
+    nightShiftDays: 10,
+    additions: 150000,
+    deductions: 0
+  },
+  {
+    id: "EMP-2002",
+    name: "د. ص. عباس فاضل العبيدي",
+    department: "قسم الصيدلية",
+    title: "صيدلاني خفر",
+    status: "active",
+    joinedDate: "2023-05-18",
+    morningShiftValue: 70000,
+    nightShiftValue: 100000,
+    morningShiftDays: 14,
+    nightShiftDays: 12,
+    additions: 50000,
+    deductions: 30000
+  },
+
+  // 3. قسم العمليات
+  {
+    id: "EMP-3001",
+    name: "د. عمار ياسين الموسوي",
+    department: "قسم العمليات",
+    title: "مسؤول صالة العمليات",
+    status: "active",
+    joinedDate: "2019-05-15",
+    totalSalary: 2500000,
+    dayValue: 85000,
+    hourValue: 10500,
+    workDaysCount: 28,
+    additions: 200000,
+    deductions: 0
   },
   {
     id: "EMP-3002",
-    name: "د. ص. عباس فاضل العبيدي",
-    department: "قسم الصيدلية",
-    title: "صيدلاني",
-    totalSalary: 1600000,
-    dailySalary: Math.round(1600000 / 30),
-    hourlySalary: Math.round((1600000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2023-05-18",
-    status: "active"
+    name: "كرار عبد الصاحب",
+    department: "قسم العمليات",
+    title: "مساعد تخدير",
+    status: "active",
+    joinedDate: "2022-04-12",
+    totalSalary: 1400000,
+    dayValue: 45000,
+    hourValue: 6000,
+    workDaysCount: 26,
+    additions: 50000,
+    deductions: 40000
   },
 
   // 4. قسم النسائية والتوليد
@@ -373,325 +209,430 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     id: "EMP-4001",
     name: "نادين وليد البياتي",
     department: "قسم النسائية والتوليد",
-    title: "قابلة",
-    totalSalary: 1200000,
-    dailySalary: Math.round(1200000 / 30),
-    hourlySalary: Math.round((1200000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    title: "قابلة مأذونة",
+    status: "active",
     joinedDate: "2022-08-20",
-    status: "active"
+    fullDayValue: 60000,
+    halfShiftValue: 30000,
+    workDaysCount: 22,
+    additions: 120000,
+    deductions: 0
   },
 
-  // 5. الكافتيريا
+  // 5. قسم الكافتريا
   {
     id: "EMP-5001",
     name: "أبو أحمد البصراوي",
-    department: "الكافتيريا",
-    title: "كلفة / طباخ",
-    totalSalary: 1000000,
-    dailySalary: Math.round(1000000 / 30),
-    hourlySalary: Math.round((1000000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم الكافتريا",
+    title: "طباخ رئيسي",
+    status: "active",
     joinedDate: "2018-12-01",
-    status: "active"
+    dayValue: 35000,
+    hourValue: 4500,
+    workDaysCount: 28,
+    additions: 70000,
+    deductions: 0
   },
   {
     id: "EMP-5002",
     name: "أحمد ستار العراقي",
-    department: "الكافتيريا",
-    title: "عامل",
-    totalSalary: 600000,
-    dailySalary: Math.round(600000 / 30),
-    hourlySalary: Math.round((600000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم الكافتريا",
+    title: "عامل صالة",
+    status: "active",
     joinedDate: "2023-09-15",
-    status: "active"
+    dayValue: 25000,
+    hourValue: 3000,
+    workDaysCount: 26,
+    additions: 0,
+    deductions: 15000
   },
 
-  // 6. قسم الأطفال والخدج
+  // 6. قسم الاطفال والخدج
   {
     id: "EMP-6001",
     name: "دعاء طارق العامري",
-    department: "قسم الأطفال والخدج",
-    title: "مسؤول قسم تمريض الخدج",
-    totalSalary: 1350000,
-    dailySalary: Math.round(1350000 / 30),
-    hourlySalary: Math.round((1350000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم الاطفال والخدج",
+    title: "مسؤول تمريض الخدج",
+    status: "active",
     joinedDate: "2021-07-01",
-    status: "active"
-  },
-  {
-    id: "EMP-6002",
-    name: "ممرض محمد سعد الخالدي",
-    department: "قسم الأطفال والخدج",
-    title: "ممرض",
-    totalSalary: 950000,
-    dailySalary: Math.round(950000 / 30),
-    hourlySalary: Math.round((950000 / 30) / 8),
-    deductionDays: 1,
-    deductionHours: 3,
-    isFlatRate: false,
-    joinedDate: "2022-10-10",
-    status: "active"
+    morningShiftValue: 50000,
+    nightShiftValue: 75000,
+    morningShiftDaysCount: 16,
+    nightShiftDaysCount: 12,
+    additions: 100000,
+    deductions: 0
   },
 
-  // 7. قسم الأشعة والمفراس والسونار (رواتب الأشعة = مبلغ قطعي)
+  // 7. قسم السونار
   {
     id: "EMP-7001",
     name: "ميثاق صباح الربيعي",
-    department: "قسم الأشعة والمفراس والسونار",
-    title: "مسؤول قسم الأشعة والسونار",
-    totalSalary: 1400000,
-    dailySalary: Math.round(1400000 / 30),
-    hourlySalary: Math.round((1400000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: true,
-    flatRateType: "radiology",
+    department: "قسم السونار",
+    title: "اختصاصي سونار وملخص",
+    status: "active",
     joinedDate: "2019-12-10",
-    status: "active",
-    notes: "رتب قطعي - رواتب الأشعة قطعية"
-  },
-  {
-    id: "EMP-7002",
-    name: "د. علي الشمري",
-    department: "قسم الأشعة والمفراس والسونار",
-    title: "طبيب أشعة وسونار",
-    totalSalary: 3000000,
-    dailySalary: Math.round(3000000 / 30),
-    hourlySalary: Math.round((3000000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: true,
-    flatRateType: "radiology",
-    joinedDate: "2022-01-20",
-    status: "active",
-    notes: "راتب قطعي - مستثنى من قوانين الاستقطاعات اليومية"
+    recallValue: 70000,
+    workDaysCount: 20,
+    additions: 150000,
+    deductions: 20000
   },
 
-  // 8. قسم أطباء الخدج المقيمين
+  // 8. قسم اطباء الخدج المقيمين
   {
     id: "EMP-8001",
     name: "د. مريم جعفر الحسيني",
-    department: "قسم أطباء الخدج المقيمين",
-    title: "طبيب مقيم",
-    totalSalary: 1800000,
-    dailySalary: Math.round(1800000 / 30),
-    hourlySalary: Math.round((1800000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم اطباء الخدج المقيمين",
+    title: "طبيب مقيم أطفال وخدج",
+    status: "active",
     joinedDate: "2023-01-05",
-    status: "active"
+    fullDayValue: 120000,
+    jointDayValue: 160000,
+    fullDayCount: 15,
+    jointDayCount: 10,
+    additions: 250000,
+    deductions: 0
   },
 
-  // 9. قسم المختبر
+  // 9. قسم المختبر ومصرف الدم
   {
     id: "EMP-9001",
     name: "د. كمال شاكر الخالد",
-    department: "قسم المختبر",
-    title: "مسؤول قسم المختبر",
-    totalSalary: 1800000,
-    dailySalary: Math.round(1800000 / 30),
-    hourlySalary: Math.round((1800000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم المختبر ومصرف الدم",
+    title: "مسؤول المختبر العلمي",
+    status: "active",
     joinedDate: "2020-09-01",
-    status: "active"
-  },
-  {
-    id: "EMP-9002",
-    name: "زينب حيدر الجابري",
-    department: "قسم المختبر",
-    title: "محلل",
-    totalSalary: 1100000,
-    dailySalary: Math.round(1100000 / 30),
-    hourlySalary: Math.round((1100000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2024-03-01",
-    status: "active"
+    morningShiftValue: 55000,
+    nightShiftValue: 85000,
+    halfShiftValue9: 30000,
+    morningShiftDays9: 14,
+    nightShiftDays9: 12,
+    halfShiftDays9: 4,
+    additions: 80000,
+    deductions: 10000
   },
 
-  // 10. قسم التمريض الأطباء المقيمين
+  // 10. قسم الاطباء المقيمين
   {
     id: "EMP-10001",
     name: "د. حيدر الأسدي",
-    department: "قسم التمريض الأطباء المقيمين",
+    department: "قسم الاطباء المقيمين",
     title: "مسؤول الأطباء المقيمين",
-    totalSalary: 2200000,
-    dailySalary: Math.round(2200000 / 30),
-    hourlySalary: Math.round((2200000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    status: "active",
     joinedDate: "2021-04-10",
-    status: "active"
-  },
-  {
-    id: "EMP-10002",
-    name: "د. فاطمة زهير الخاقاني",
-    department: "قسم التمريض الأطباء المقيمين",
-    title: "طبيب مقيم",
-    totalSalary: 1700000,
-    dailySalary: Math.round(1700000 / 30),
-    hourlySalary: Math.round((1700000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2023-11-20",
-    status: "active"
+    dayValue12h: 110000,
+    workDaysCount: 24,
+    additions: 180000,
+    deductions: 0
   },
 
-  // 11. قسم التمريض الردهات والطوارئ
+  // 11. قسم التمريض والردهات والطواريء
   {
     id: "EMP-11001",
     name: "يوسف جلال الموسوي",
-    department: "قسم التمريض الردهات والطوارئ",
-    title: "ممرض",
-    totalSalary: 950000,
-    dailySalary: Math.round(950000 / 30),
-    hourlySalary: Math.round((950000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم التمريض والردهات والطواريء",
+    title: "ممرض طوارئ رئيسي",
+    status: "active",
     joinedDate: "2022-09-01",
-    status: "active"
+    shiftValue11: 45000,
+    workDays12h11: 22,
+    additions: 60000,
+    deductions: 25000
   },
 
-  // 12. قسم أطباء النسائية
+  // 12. قسم اطباء النسائية
   {
     id: "EMP-12001",
     name: "د. سهام عبد اللطيف",
-    department: "قسم أطباء النسائية",
-    title: "مسؤول قسم أطباء النسائية",
-    totalSalary: 2800000,
-    dailySalary: Math.round(2800000 / 30),
-    hourlySalary: Math.round((2800000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
+    department: "قسم اطباء النسائية",
+    title: "طبيبة نسائية أخصائية",
+    status: "active",
     joinedDate: "2019-11-01",
-    status: "active"
-  },
-  {
-    id: "EMP-12002",
-    name: "د. غدير جعفر المالكي",
-    department: "قسم أطباء النسائية",
-    title: "طبيبة نسائية",
-    totalSalary: 2400000,
-    dailySalary: Math.round(2400000 / 30),
-    hourlySalary: Math.round((2400000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: false,
-    joinedDate: "2023-08-15",
-    status: "active"
+    dayValue: 160000,
+    workDaysCount: 18,
+    additions: 300000,
+    deductions: 0
   },
 
-  // 13. قسم الأمنية والحراسة (رواتب الأمنية = مبلغ قطعي)
+  // 13. قسم الاشعة
   {
     id: "EMP-13001",
-    name: "رائد كريم العزاوي",
-    department: "قسم الأمنية والحراسة",
-    title: "مسؤول الأمنية",
-    totalSalary: 1100000,
-    dailySalary: Math.round(1100000 / 30),
-    hourlySalary: Math.round((1100000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: true,
-    flatRateType: "security",
-    joinedDate: "2020-03-01",
+    name: "د. علي الشمري",
+    department: "قسم الاشعة",
+    title: "طبيب أشعة استشاري",
     status: "active",
-    notes: "راتب قطعي - مستثنى من الاستقطاعات"
-  },
-  {
-    id: "EMP-13002",
-    name: "عباس مطر الفضلي",
-    department: "قسم الأمنية والحراسة",
-    title: "حارس أمن",
-    totalSalary: 700000,
-    dailySalary: Math.round(700000 / 30),
-    hourlySalary: Math.round((700000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: true,
-    flatRateType: "security",
-    joinedDate: "2023-02-15",
-    status: "active",
-    notes: "راتب قطعي للأفراد الحرس"
+    joinedDate: "2022-01-20",
+    radiologyTotalSum: 3000000,
+    notes: "راتب قطعي بموجب العقد الكلي للاشعة"
   },
 
-  // 14. قسم الإسعاف الفوري (رواتب الإسعاف = مبلغ قطعي)
+  // 14. قسم الامنية
   {
     id: "EMP-14001",
-    name: "عمار نجم العبادي",
-    department: "قسم الإسعاف الفوري",
-    title: "سائق إسعاف",
-    totalSalary: 900000,
-    dailySalary: Math.round(900000 / 30),
-    hourlySalary: Math.round((900000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: true,
-    flatRateType: "ambulance",
-    joinedDate: "2021-12-01",
+    name: "رائد كريم العزاوي",
+    department: "قسم الامنية",
+    title: "مسؤول الأمن والسلامة",
     status: "active",
-    notes: "راتب قطعي - فئة سيارات الإسعاف الفوري"
+    joinedDate: "2020-03-01",
+    securityTotalSum: 1100000,
+    notes: "راتب شهري قطعي مثبت للأمنية"
   },
+
+  // 15. قسم الاسعاف
   {
-    id: "EMP-14002",
-    name: "تحسين علاء العكيلي",
-    department: "قسم الإسعاف الفوري",
-    title: "مسعف طوارئ",
-    totalSalary: 1000000,
-    dailySalary: Math.round(1000000 / 30),
-    hourlySalary: Math.round((1000000 / 30) / 8),
-    deductionDays: 0,
-    deductionHours: 0,
-    isFlatRate: true,
-    flatRateType: "ambulance",
-    joinedDate: "2022-05-15",
+    id: "EMP-15001",
+    name: "عمار نجم العبادي",
+    department: "قسم الاسعاف",
+    title: "سائق إسعاف فوري",
     status: "active",
-    notes: "راتب قطعي للمسعفين الميدانيين"
+    joinedDate: "2021-12-01",
+    ambulanceTotalSum: 950000,
+    notes: "مبلغ قطعي مخصص للإسعاف الفوري"
   }
 ];
 
-// دالة احتساب الراتب النهائي والاستقطاعات لموظف معين
+// دالة احتساب الراتب النهائي والاستقطاعات والإضافات حسب قواعد كل قسم الـ 15 المذكورة
 export const calculateEmployeeSalaryAndDeductions = (emp: Employee) => {
-  // للرواتب القطعية، بعض الأنظمة تتجاهل استقطاع ساعات وأيام الغياب أو تحسبها في الحالات النادرة للغاية.
-  // تماشياً مع طلب المخطط: "رواتب الاسعاف، الأمنية، الأشعة = مبلغ قطعي"، لن نجري استقطاعات عليها إلا إذا تم تحديدها يدوياً
-  // من باب الكفاءة والوضوح، سيتم الحساب بالشكل التالي:
-  const isFlat = emp.isFlatRate;
-  
-  // الاحتساب القياسي بناء على طلب المخطط للأعمدة:
-  const daily = Math.round(emp.totalSalary / 30);
-  const hourly = Math.round(daily / 8);
+  let finalSalary = 0;
+  let totalDeductions = 0;
+  let totalAdditions = 0;
+  let calculationDetails = "";
 
-  const deductionDaysAmount = isFlat ? 0 : emp.deductionDays * daily;
-  const deductionHoursAmount = isFlat ? 0 : emp.deductionHours * hourly;
-  const totalDeductions = deductionDaysAmount + deductionHoursAmount;
-  const finalSalary = emp.totalSalary - totalDeductions;
+  switch (emp.department) {
+    case "الادارة العليا": {
+      const base = emp.baseSalary || 0;
+      const otDays = emp.overtimeDays || 0;
+      const otHours = emp.overtimeHours || 0;
+      const pens = emp.penalties || 0;
+      const dedDays = emp.deductionDays || 0;
+      const dedHours = emp.deductionHours || 0;
+      
+      const dayRate = Math.round(base / 30);
+      const hourRate = Math.round(dayRate / 8);
+      
+      const addFromOtDays = otDays * dayRate;
+      const addFromOtHours = otHours * hourRate;
+      const dedFromDays = dedDays * dayRate;
+      const dedFromHours = dedHours * hourRate;
+      
+      totalAdditions = addFromOtDays + addFromOtHours;
+      totalDeductions = pens + dedFromDays + dedFromHours;
+      finalSalary = base + totalAdditions - totalDeductions;
+      
+      calculationDetails = `الأساسي (${base.toLocaleString()}) + إضافي أيام (${otDays} × ${dayRate.toLocaleString()}) + إضافي ساعات (${otHours} × ${hourRate.toLocaleString()}) - غياب أيام (${dedDays} × ${dayRate.toLocaleString()}) - تأخير ساعات (${dedHours} × ${hourRate.toLocaleString()}) - عقوبات (${pens.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم الصيدلية": {
+      const morningRate = emp.morningShiftValue || 0;
+      const nightRate = emp.nightShiftValue || 0;
+      const morningDays = emp.morningShiftDays || 0;
+      const nightDays = emp.nightShiftDays || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const shiftsSum = (morningRate * morningDays) + (nightRate * nightDays);
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = shiftsSum + add - ded;
+      
+      calculationDetails = `الشفتات [صباحي (${morningDays} × ${morningRate.toLocaleString()}) + خفر (${nightDays} × ${nightRate.toLocaleString()}) = ${shiftsSum.toLocaleString()}] + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم العمليات": {
+      const totSal = emp.totalSalary || 0;
+      const dVal = emp.dayValue || 0;
+      const hVal = emp.hourValue || 0;
+      const days = emp.workDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      // حساب الراتب مستنداً على مبلغ اليوم × عدد أيام الدوام أو الراتب الإجمالي المباشر
+      const base = dVal > 0 ? (dVal * days) : totSal;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = dVal > 0 
+        ? `دوام أيام (${days} × ${dVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`
+        : `الإجمالي المباشر (${totSal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم النسائية والتوليد": {
+      const fDay = emp.fullDayValue || 0;
+      const hShift = emp.halfShiftValue || 0;
+      const days = emp.workDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = (fDay * days) + hShift;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `يوم كامل (${days} × ${fDay.toLocaleString()}) + نصف شفت (${hShift.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم الكافتريا": {
+      const dVal = emp.dayValue || 0;
+      const days = emp.workDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = dVal * days;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `أيام العمل (${days} × ${dVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم الاطفال والخدج": {
+      const shiftMo = emp.morningShiftValue || 0;
+      const shiftNi = emp.nightShiftValue || 0;
+      const daysMo = emp.morningShiftDaysCount || 0;
+      const daysNi = emp.nightShiftDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const shiftsSum = (shiftMo * daysMo) + (shiftNi * daysNi);
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = shiftsSum + add - ded;
+      
+      calculationDetails = `مجموع الشفتين (${shiftsSum.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم السونار": {
+      const recallVal = emp.recallValue || 0;
+      const days = emp.workDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = recallVal * days;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `الاستدعاء (${days} × ${recallVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم اطباء الخدج المقيمين": {
+      const fullDayVal = emp.fullDayValue || 0;
+      const jointDayVal = emp.jointDayValue || 0;
+      const fdCount = emp.fullDayCount || 0;
+      const jdCount = emp.jointDayCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = (fullDayVal * fdCount) + (jointDayVal * jdCount);
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `يوم كامل (${fdCount} × ${fullDayVal.toLocaleString()}) + يوم مشترك (${jdCount} × ${jointDayVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم المختبر ومصرف الدم": {
+      const moVal = emp.morningShiftValue || 0;
+      const niVal = emp.nightShiftValue || 0;
+      const halfVal = emp.halfShiftValue9 || 0;
+      const moDays = emp.morningShiftDays9 || 0;
+      const niDays = emp.nightShiftDays9 || 0;
+      const halfDays = emp.halfShiftDays9 || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const baseSum = (moVal * moDays) + (niVal * niDays) + (halfVal * halfDays);
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = baseSum + add - ded;
+      
+      calculationDetails = `صباحي (${moDays}×${moVal.toLocaleString()}) + خفر (${niDays}×${niVal.toLocaleString()}) + نصف شفت (${halfDays}×${halfVal.toLocaleString()}) + إضافات (${add}) - لمختبر (${ded})`;
+      break;
+    }
+
+    case "قسم الاطباء المقيمين": {
+      const d12hVal = emp.dayValue12h || 0;
+      const days = emp.workDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = d12hVal * days;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `يوم 12ساعة (${days} × ${d12hVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم التمريض والردهات والطواريء": {
+      const sVal = emp.shiftValue11 || 0;
+      const days = emp.workDays12h11 || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = sVal * days;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `الشفت (${days} × ${sVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم اطباء النسائية": {
+      const dVal = emp.dayValue || 0;
+      const days = emp.workDaysCount || 0;
+      const add = emp.additions || 0;
+      const ded = emp.deductions || 0;
+
+      const base = dVal * days;
+      totalAdditions = add;
+      totalDeductions = ded;
+      finalSalary = base + add - ded;
+      
+      calculationDetails = `الأيام (${days} × ${dVal.toLocaleString()}) + إضافات (${add.toLocaleString()}) - استقطاعات (${ded.toLocaleString()})`;
+      break;
+    }
+
+    case "قسم الاشعة": {
+      finalSalary = emp.radiologyTotalSum || 0;
+      calculationDetails = `مبلغ قطعي كلي للاشعة يدوياً: ${finalSalary.toLocaleString()} د.ع`;
+      break;
+    }
+
+    case "قسم الامنية": {
+      finalSalary = emp.securityTotalSum || 0;
+      calculationDetails = `مبلغ قطعي كلي للامنية يدوياً: ${finalSalary.toLocaleString()} د.ع`;
+      break;
+    }
+
+    case "قسم الاسعاف": {
+      finalSalary = emp.ambulanceTotalSum || 0;
+      calculationDetails = `مبلغ قطعي كلي للاسعاف يدوياً: ${finalSalary.toLocaleString()} د.ع`;
+      break;
+    }
+
+    default: {
+      finalSalary = emp.totalSalary || 0;
+      calculationDetails = `حساب عام افتراضي: ${finalSalary.toLocaleString()} د.ع`;
+      break;
+    }
+  }
 
   return {
-    dailySalary: daily,
-    hourlySalary: hourly,
-    deductionDaysAmount,
-    deductionHoursAmount,
+    finalSalary,
     totalDeductions,
-    finalSalary
+    totalAdditions,
+    calculationDetails
   };
 };
 
@@ -705,17 +646,10 @@ export const INITIAL_PAYROLLS: PayrollRecord[] = INITIAL_EMPLOYEES.map(emp => {
     employeeName: emp.name,
     department: emp.department,
     title: emp.title,
-    totalSalary: emp.totalSalary,
-    dailySalary: calc.dailySalary,
-    hourlySalary: calc.hourlySalary,
-    deductionDays: emp.deductionDays,
-    deductionHours: emp.deductionHours,
-    isFlatRate: emp.isFlatRate,
-    flatRateType: emp.flatRateType,
-    calculatedDeductionsDaysAmount: calc.deductionDaysAmount,
-    calculatedDeductionsHoursAmount: calc.deductionHoursAmount,
-    totalDeductions: calc.totalDeductions,
     finalSalary: calc.finalSalary,
+    totalSalary: emp.totalSalary || emp.baseSalary || emp.radiologyTotalSum || emp.securityTotalSum || emp.ambulanceTotalSum || 0,
+    totalDeductions: calc.totalDeductions,
+    totalAdditions: calc.totalAdditions,
     status: 'draft',
     processedDate: '2026-05-26'
   };
