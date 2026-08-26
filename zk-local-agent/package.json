@@ -1,0 +1,24 @@
+{
+  "name": "zk-local-biometric-agent",
+  "version": "1.0.0",
+  "description": "Local web service agent for ZKTeco fingerprint readers (zkemkeeper.dll) on Port 22001",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build:exe": "npx pkg server.js --targets node18-win-x64 --output ZKTecoLocalAgent.exe"
+  },
+  "dependencies": {
+    "@serialport/bindings-cpp": "^13.0.1",
+    "@types/ffi-napi": "^4.0.10",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "ffi-napi": "^4.0.3",
+    "ref-napi": "^3.0.3",
+    "ws": "^8.16.0"
+  },
+  "optionalDependencies": {
+    "winax": "0.5.x"
+  },
+  "author": "Hospital Biometric Integration Team",
+  "license": "MIT"
+}
